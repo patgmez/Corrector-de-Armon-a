@@ -39,3 +39,6 @@ No requiere instalación, dependencias de Node ni servidor de backend.
 1. Clona el repositorio: `git clone https://github.com/patgmez/Corrector-de-Armon-a.git`
 2. Abre el archivo `index.html` en cualquier navegador web moderno.
 *(Nota: Se requiere conexión a internet para cargar las librerías de ABCJS y los samples de Tone.js la primera vez).*
+
+
+Si encuentras algún error o tienes sugerencias, por favor repórtalo en la pestaña Issues
