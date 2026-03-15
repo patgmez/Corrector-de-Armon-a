@@ -2031,15 +2031,18 @@ function checkParallelsStrict(c1, c2, res1, res2, chordIndex, localTonic, localM
         
         if (!int1 || !int2) return;
 
-        // --- REGLA 1: DISONANCIAS CONSECUTIVAS ---
-        // REFINAMIENTO: Solo aplicamos la prohibición si AMBAS voces se mueven.
-        // Si al menos una se mantiene quieta (movimiento oblicuo), se permite.
-                const algunaNotaQuieta = (n1A.midi === n2A.midi || n1B.midi === n2B.midi);
+                // --- REGLA 1: DISONANCIAS CONSECUTIVAS ---
+        const diffGrave = n2A.midi - n1A.midi; // Movimiento de la voz inferior
+        const diffAguda = n2B.midi - n1B.midi; // Movimiento de la voz superior
         
-        if (!algunaNotaQuieta) {
+        const algunaNotaQuieta = (diffGrave === 0 || diffAguda === 0);
+        const movimientoContrario = (diffGrave > 0 && diffAguda < 0) || (diffGrave < 0 && diffAguda > 0);
+        
+        // Solo aplicamos la prohibición si ambas voces se mueven y NO es en movimiento contrario
+        if (!algunaNotaQuieta && !movimientoContrario) {
             const diss1 = isDissonant(int1, v2, v1);
             const diss2 = isDissonant(int2, v2, v1);
-            
+
             if (diss1 && diss2) {
                 infos.push(`Disonancias consecutivas entre ${vNames[v1]} y ${vNames[v2]}: Asegúrate de que el enlace es correcto.`);
                 badPairs.push(`${v1}-${v2}`);
@@ -3412,22 +3415,32 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
 
         // 3c. La nueva tónica es diferente de la tonalidad local vigente
         const currentTonicPC = getTonicPC(tonActual.tonic);
+        
         if (targetPC === currentTonicPC) continue;
 
-    // --- NUEVO: Comprobar si es Inflexión o Modulación Confirmada (Lookahead) ---
+    // --- NUEVO: Comprobar si es Inflexión o Modulación Confirmada (Lookahead extendido) ---
         let esInflexion = false;
-        if (resIdx + 1 < results.length) {
-            const acordePosterior = results[resIdx + 1];
+        const originalDominantPC = (currentTonicPC + 7) % 12;
+
+        const limiteInflexion = Math.min(results.length, resIdx + 4);
+        for (let k = resIdx + 1; k < limiteInflexion; k++) {
+            const acordePosterior = results[k];
             if (!acordePosterior.error) {
                 const tipoPost = acordePosterior.tipo || "";
-                // Si el acorde que sigue a la nueva tónica es OTRA dominante que nos saca de ahí inmediatamente
                 const esDominanteFugaz = tipoPost.includes("Dominante") || tipoPost === "7 (omit 5)" || tipoPost.includes("M7m") || tipoPost.includes("Sexta aumentada");
                 
-                // Si nos vamos inmediatamente, es una inflexión, no una modulación estructural
-                if (esDominanteFugaz) {
+                const esCadencialOriginal = (acordePosterior.rootPC === currentTonicPC && acordePosterior.estadoTexto && acordePosterior.estadoTexto.includes("2ª Inversión"));
+
+                if (esDominanteFugaz || acordePosterior.rootPC === originalDominantPC || esCadencialOriginal) {
                     esInflexion = true;
+                    break;
                 }
             }
+        }
+
+        // Si es dominante secundaria, abortamos la modulación. El analizador de grados se encargará de poner (V/x)
+        if (esInflexion) {
+            continue; 
         }
 
         const tipoSig = resRes.tipo || "";
@@ -3436,7 +3449,7 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         if (!newTonicEng) continue;
 
          // PASO 4 — CLASIFICAR TIPO DE MODULACIÓN
-        let tipoMod       = esInflexion ? "Inflexión (pasajera)" : "Directa";
+        let tipoMod       = "Directa";
         let pivoteDesc    = "";
 
         if (i > 0) {
@@ -3485,16 +3498,9 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         }
 
               // --- NUEVO: Solo actualizar la tonalidad local si NO es una inflexión ---
-        if (!esInflexion) {
-            for (let j = i; j < results.length; j++) {
-                tonalidadLocal[j] = { tonic: newTonicEng, mode: newMode };
-            }
-        } else {
-            // Si es inflexión, actualizamos la tonalidad solo para el acorde dominante y su resolución
-            tonalidadLocal[i] = { tonic: newTonicEng, mode: newMode };
-            tonalidadLocal[resIdx] = { tonic: newTonicEng, mode: newMode };
+        for (let j = i; j < results.length; j++) {
+            tonalidadLocal[j] = { tonic: newTonicEng, mode: newMode };
         }
-
 
         modulaciones.push({
             acordeD:    i + 1,
