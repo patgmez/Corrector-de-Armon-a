@@ -5775,7 +5775,6 @@ function parseFiguredBass(cifrado) {
             // Rellenar tríada básica si falta
             if (!nums.includes(7)) {
                  if (nums.includes(6) && !nums.includes(4) && !nums.includes(3)) tokens.push({acc:'', num:3});
-                 if (nums.includes(4) && nums.includes(6) && !nums.includes(2)) tokens.push({acc:'', num:2}); // 6/4/2 -> 2
                  if (nums.includes(5) && !nums.includes(3)) tokens.push({acc:'', num:3});
             }
         }
