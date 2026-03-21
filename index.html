@@ -3465,19 +3465,12 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
 
         let tieneNotaDiferencial = false;
 
-        // ── Determinación del modo destino ────────────────────────────────────
-        // En lugar de fiarse del tipo del único acorde siguiente (que puede ser
-        // una cadencia evitada, p.ej. V7→vi), examinamos los próximos 5 acordes
-        // y contamos qué notas distinguen mayor de menor en la tonalidad destino.
-        //
-        //  Notas exclusivas de Mayor (relativas a targetPC): 3ª M (+4), 6ª M (+9), 7ª M (+11)
-        //  Notas exclusivas de menor (relativas a targetPC): 3ª m (+3), 6ª m (+8), 7ª m (+10)
-        //
-        // El modo que acumule más "votos" gana; empate → mayor.
-        const majorDistPC = [4, 9, 11].map(n => (targetPC + n) % 12);
-        const minorDistPC = [3, 8, 10].map(n => (targetPC + n) % 12);
+                // Excluimos la 7ª porque la sensible aparece en ambos modos (menor armónica)
+        const majorDistPC = [4, 9].map(n => (targetPC + n) % 12);
+        const minorDistPC = [3, 8].map(n => (targetPC + n) % 12);
         let votoMaj = 0, votoMin = 0;
         const lookaheadMode = Math.min(results.length, i + 6);
+        
         for (let k = i + 1; k < lookaheadMode; k++) {
             const chObj = structuralChords[`chord${k}`];
             if (!chObj) continue;
@@ -3489,7 +3482,18 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
                 if (minorDistPC.includes(pc)) votoMin++;
             });
         }
-        const newMode = (votoMin > votoMaj) ? 'minor' : 'major';
+        
+        let newMode = (votoMin > votoMaj) ? 'minor' : 'major';
+        
+        // Desempate lógico basado en el origen
+        if (votoMin === votoMaj) {
+            newMode = tonActual.mode; 
+        } 
+        // Detección de Cadencia de Picardía (Acaba en Mayor pero venimos de menor con poco margen)
+        else if (votoMaj > votoMin && tonActual.mode === 'minor' && (lookaheadMode - i) <= 3) {
+            newMode = 'minor';
+        }
+
         const newScalePCs = (newMode === 'major') ? intervalsMajor.map(n => (targetPC + n) % 12) : 
                                                     intervalsMinor.map(n => (targetPC + n) % 12);
         
