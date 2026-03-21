@@ -1774,7 +1774,7 @@ function checkSecondInversionRules(c0, c1, c2, res1, res2, esMismoAcorde, res0, 
     if (!esCadencial && !esMismoAnterior && bassIn > 2 && bassIn !== 12) {
         // En acordes 4/3 (V7 invertido) el salto en el bajo es más aceptable si es lógico melódicamente,
         // pero mantenemos la advertencia general salvo que sea muy evidente.
-        warnings.push(`Acorde en 2ª inv.: El BAJO entra por salto (${bassIn} semitonos). Comprueba que sea una sexta y cuarta cadencial.`);
+        warnings.push(`Acorde en 2ª inv.: El BAJO entra por salto (${bassIn} semitonos). Comprueba que sea 6/4 cadencial.`);
     }
     
     if (!esMismoAcorde && bassOut > 2 && bassOut !== 12) {
@@ -1809,7 +1809,7 @@ function checkSecondInversionRules(c0, c1, c2, res1, res2, esMismoAcorde, res0, 
             });
 
             if (!alguienPreparo) {
-                warnings.push(`Acorde 6/4: Falta preparación de la cuarta (ninguna voz entra por grado o nota común).`);
+                warnings.push(`Acorde 6/4: Falta preparación de la cuarta (comprueba que sea Cadencial).`);
             }
             if (!alguienResolvio && !esMismoAcorde) {
                 warnings.push(`Acorde 6/4: Falta resolución de la cuarta (ninguna voz sale por grado o nota común).`);
@@ -3314,12 +3314,10 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
     const tonalidadLocal = [];
     const modulaciones = [];
 
-    // Inicializar todos los acordes con la tonalidad global
     for (let i = 0; i < results.length; i++) {
         tonalidadLocal.push({ tonic: globalTonicEng, mode: globalMode });
     }
 
-    // Mapa: nombre español de nota → Pitch Class
     const spanishToPC = {
         'Do': 0, 'Do#': 1, 'Reb': 1, 'Re': 2, 'Re#': 3, 'Mib': 3,
         'Mi': 4, 'Mi#': 5, 'Fa': 5, 'Fa#': 6, 'Solb': 6, 'Sol': 7,
@@ -3327,21 +3325,9 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         'Si': 11, 'Dob': 11, 'Si#': 0
     };
 
-    // Intervalos de escala mayor y menor
-    // Menor: unión de natural + armónica + melódica ascendente
-    //   Natural:  0,2,3,5,7, 8,10
-    //   Armónica: 0,2,3,5,7, 8,11  (VII alterado)
-    //   Melódica: 0,2,3,5,7, 9,11  (VI y VII ascendidos)
-    const intervalsMajor        = [0, 2, 4, 5, 7, 9, 11];
-    const intervalsMinorExpanded = [0, 2, 3, 5, 7, 8, 9, 10, 11];
+    const intervalsMajor = [0, 2, 4, 5, 7, 9, 11];
+    const intervalsMinor = [0, 2, 3, 5, 7, 8, 10, 11];
 
-    function getScalePCs(tonicEng, mode) {
-        const tonicPC = getTonicPC(tonicEng);
-        const ivs = (mode === 'major') ? intervalsMajor : intervalsMinorExpanded;
-        return ivs.map(n => (tonicPC + n) % 12);
-    }
-
-    // PC → nombre inglés de tónica
     function pcToEnglishTonic(pc, preferMode) {
         const lista = (preferMode === 'minor') ? validTonics.minor : validTonics.major;
         for (const t of lista) {
@@ -3353,232 +3339,386 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         return null;
     }
 
-    // Recorremos cada acorde buscando candidatos a dominante modulante
+    // Devuelve array de PCs únicos presentes en un acorde estructural
+    const getChordPCsLocal = (chordObj) => {
+        const pcs = [];
+        ['soprano','alto','tenor','bass'].forEach(v => {
+            const n = chordObj[v];
+            if (n && n.pitchClass !== undefined) pcs.push(parseInt(n.pitchClass, 10));
+        });
+        return [...new Set(pcs)];
+    };
+
+    // Nombres españoles para describir PCs en los mensajes enarmónicos
+    const pcNameES = ['Do','Do#','Re','Mib','Mi','Fa','Fa#','Sol','Lab','La','Sib','Si'];
+
     for (let i = 0; i < results.length - 1; i++) {
-        const res     = results[i];
+        const res = results[i];
         const nextRes = results[i + 1];
         if (res.error || nextRes.error) continue;
 
-        const tipo     = res.tipo || "";
+        const tipo = res.tipo || "";
         const tonActual = tonalidadLocal[i];
+        const currentTonicPC = getTonicPC(tonActual.tonic);
 
-        // PASO 2 — ¿Tiene estructura de dominante?
-        const esDomPotencial =
+                const esDomPotencial = (
+            tipo.includes("Dominante") || 
+            tipo.includes("M7m") || 
             tipo.includes("Mayor con 7ª menor") ||
-            tipo === "7 (omit 5)"               ||
-            tipo.includes("Disminuido")          ||
-            tipo.includes("Semidisminuido")      ||
-            tipo.includes("Dominante")           ||
-            tipo.includes("Sexta aumentada")     ||
-            tipo.includes("Aumentado");
+            tipo.includes("Disminuido") || 
+            tipo.includes("Sexta aumentada") || 
+            (tipo.includes("Mayor") && !tipo.includes("M7M")) || 
+            (tipo.includes("7") && !tipo.includes("Menor") && !tipo.includes("m7") && !tipo.includes("M7M")) ||
+            tipo === "Aumentado"
+        );
+
 
         if (!esDomPotencial) continue;
 
-                // Calcular hacia qué fundamental resuelve
-        let targetEsp = "";
         let targetPC = -1;
-        const esAug6 = tipo.includes("Sexta aumentada");
+        let targetEsp = "";
+        
+        if (tipo.includes("Sexta aumentada Alemana") || tipo.includes("Sexta aumentada Suiza")) {
+            // ── CASO ENARMÓNICO 3: Sexta aumentada alemana / suiza ───────────────
+            // Resolución estándar:   bajo + 4 semit. = tónica actual  (tonicalizacion)
+            // Reinterpretación V7:   bajo + 5 semit. = nueva tónica   (modulación enarmónica)
+            // Si el target estándar coincide con la tónica actual, intentamos el enarmónico.
+            const bassPC_6a = parseInt(structuralChords[`chord${i+1}`].bass.pitchClass, 10);
+            const stdTarget  = (bassPC_6a + 4) % 12;
+            const enhTarget  = (bassPC_6a + 5) % 12;
+            targetPC = (stdTarget === currentTonicPC) ? enhTarget : stdTarget;
 
-        if (esAug6) {
-            // El bajo de la 6ª aumentada es el bVI. La tónica destino está una 3ª mayor arriba (+4 semitonos).
-            const currStruct = structuralChords[`chord${i + 1}`];
-            const bassPC = currStruct.bass.pitchClass;
-            targetPC = (bassPC + 4) % 12;
-            
-            const pcToSpanish = {
-                0: 'Do', 1: 'Reb', 2: 'Re', 3: 'Mib', 4: 'Mi', 5: 'Fa',
-                6: 'Fa#', 7: 'Sol', 8: 'Lab', 9: 'La', 10: 'Sib', 11: 'Si'
-            };
-            targetEsp = pcToSpanish[targetPC];
+        } else if (tipo.includes("Sexta aumentada")) {
+            // Italiana / Francesa – fórmula original
+            targetPC = (parseInt(structuralChords[`chord${i+1}`].bass.pitchClass, 10) + 4) % 12;
+
+        } else if (tipo === "Aumentado" || tipo.includes("Dism7dism") || tipo.includes("Disminuido 7")) {
+            // ── CASOS ENARMÓNICOS 1 y 2: Tríada aumentada y 7ª disminuida ────────
+            // Cada nota del acorde puede actuar como sensible (→ tónica = nota + 1).
+            // Probamos todos los candidatos y elegimos el que más notas diferenciales
+            // (notas de la escala candidata no presentes en la escala de origen)
+            // acumule en los siguientes acordes.
+            const origScaleEnh = (tonActual.mode === 'major')
+                ? intervalsMajor.map(n => (currentTonicPC + n) % 12)
+                : intervalsMinor.map(n => (currentTonicPC + n) % 12);
+
+            const notasAcorde = getChordPCsLocal(structuralChords[`chord${i+1}`]);
+            const candidatos  = [...new Set(notasAcorde.map(pc => (pc + 1) % 12))]
+                                    .filter(c => c !== currentTonicPC);
+
+            if (candidatos.length === 0) continue;
+
+            const laheadEnh = Math.min(results.length, i + 6);
+            let mejorCand = -1, mejorScore = 0;
+
+            for (const cand of candidatos) {
+                const scaleM = intervalsMajor.map(n => (cand + n) % 12);
+                const scalem = intervalsMinor.map(n => (cand + n) % 12);
+                let score = 0;
+                for (let k = i + 1; k < laheadEnh; k++) {
+                    const chObj = structuralChords[`chord${k}`];
+                    if (!chObj) continue;
+                    ['soprano','alto','tenor','bass'].forEach(v => {
+                        const n = chObj[v];
+                        if (!n || n.pitchClass === undefined) return;
+                        const p = parseInt(n.pitchClass, 10);
+                        // Solo cuenta si es diferencial (no está en la escala de origen)
+                        if ((scaleM.includes(p) || scalem.includes(p)) && !origScaleEnh.includes(p)) score++;
+                    });
+                }
+                if (score > mejorScore) { mejorScore = score; mejorCand = cand; }
+            }
+
+            if (mejorCand === -1 || mejorScore === 0) continue;
+            targetPC = mejorCand;
+            targetEsp = ""; // Se rellena vía pcToEnglishTonic más adelante
+
         } else {
-            const fundEsp = res.fundamental;
-            targetEsp = mapDominantes[fundEsp];
+            // ── Dominante estándar: usa mapDominantes ─────────────────────────────
+            targetEsp = mapDominantes[res.fundamental];
             if (!targetEsp) continue;
-
             targetPC = spanishToPC[targetEsp];
             if (targetPC === undefined) continue;
         }
 
-
-        // ¿El siguiente acorde (o el primero que resuelva) tiene esa fundamental?
-        let resIdx = i + 1; // índice 0-based del acorde que actúa como nueva tónica
-
-                if (results[resIdx].rootPC !== targetPC) {
-            // NUEVO: ¿Es una resolución rota hacia el VI grado de la nueva tonalidad?
-            const viModeMinorPC = (targetPC + 8) % 12; // VI en modo menor
-            const viModeMajorPC = (targetPC + 9) % 12; // VI en modo mayor
-            const esResolucionRota = (results[resIdx].rootPC === viModeMinorPC || results[resIdx].rootPC === viModeMajorPC);
-
-            let isChromaticDom = false;
-            if (i > 0) {
-                const prevStr = structuralChords[`chord${i}`];
-                const domStr  = structuralChords[`chord${i + 1}`];
-                if (prevStr && domStr) {
-                    ['soprano','alto','tenor','bass'].forEach(v => {
-                        const nA = prevStr[v], nD = domStr[v];
-                        if (nA && nD && nA.baseName === nD.baseName && nA.realAcc !== nD.realAcc)
-                            isChromaticDom = true;
-                    });
-                }
-            }
-
-                        // Si no hay cromatismo directo NI es una resolución rota NI es 6ª aumentada, descartamos.
-            if (!isChromaticDom && !esResolucionRota && !esAug6) continue;
-
-
-            // Buscar la tónica esperada un poco más adelante (límite de 4 acordes para no desfasar)
-            let found = false;
-            const limiteBusqueda = Math.min(results.length, i + 5);
-            for (let j = i + 2; j < limiteBusqueda; j++) {
-                if (!results[j].error && results[j].rootPC === targetPC) {
-                    resIdx = j;
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) continue;
-        }
-
-
-        const resRes = results[resIdx]; // acorde de resolución (nueva tónica)
-
-        // PASO 3 — CONFIRMACIÓN CADENCIAL
-
-                // 3a. Comprobación de estado (relajada para permitir 2ª inversión y 6/4 cadenciales)
-        const estadoD = res.estadoTexto  || "";
-        const estadoT = resRes.estadoTexto || "";
-        // Solo abortamos si el programa no ha sido capaz de identificar la posición del acorde
-        if (estadoD.includes("Desconocida") || estadoT.includes("Desconocida")) continue;
-
-
-        // 3b. La nueva tónica cae en tiempo métricamente más fuerte que el dominante
-        const bD = chordStartBeats[i + 1]      || 1;
-        const bT = chordStartBeats[resIdx + 1] || 1;
-        const wD = getMetricWeight(bD, currentMeter);
-        const wT = getMetricWeight(bT, currentMeter);
-       
-
-        // 3c. La nueva tónica es diferente de la tonalidad local vigente
-        const currentTonicPC = getTonicPC(tonActual.tonic);
-        
         if (targetPC === currentTonicPC) continue;
 
-    // --- NUEVO: Comprobar si es Inflexión o Modulación Confirmada (Lookahead extendido) ---
-        let esInflexion = false;
-        const originalDominantPC = (currentTonicPC + 7) % 12;
+        let tieneNotaDiferencial = false;
 
-        const limiteInflexion = Math.min(results.length, resIdx + 4);
-        for (let k = resIdx + 1; k < limiteInflexion; k++) {
-            const acordePosterior = results[k];
-            if (!acordePosterior.error) {
-                const tipoPost = acordePosterior.tipo || "";
-                const esDominanteFugaz = tipoPost.includes("Dominante") || tipoPost === "7 (omit 5)" || tipoPost.includes("M7m") || tipoPost.includes("Sexta aumentada");
+        // ── Determinación del modo destino ────────────────────────────────────
+        // En lugar de fiarse del tipo del único acorde siguiente (que puede ser
+        // una cadencia evitada, p.ej. V7→vi), examinamos los próximos 5 acordes
+        // y contamos qué notas distinguen mayor de menor en la tonalidad destino.
+        //
+        //  Notas exclusivas de Mayor (relativas a targetPC): 3ª M (+4), 6ª M (+9), 7ª M (+11)
+        //  Notas exclusivas de menor (relativas a targetPC): 3ª m (+3), 6ª m (+8), 7ª m (+10)
+        //
+        // El modo que acumule más "votos" gana; empate → mayor.
+        const majorDistPC = [4, 9, 11].map(n => (targetPC + n) % 12);
+        const minorDistPC = [3, 8, 10].map(n => (targetPC + n) % 12);
+        let votoMaj = 0, votoMin = 0;
+        const lookaheadMode = Math.min(results.length, i + 6);
+        for (let k = i + 1; k < lookaheadMode; k++) {
+            const chObj = structuralChords[`chord${k}`];
+            if (!chObj) continue;
+            ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
+                const n = chObj[v];
+                if (!n || n.pitchClass === undefined) return;
+                const pc = parseInt(n.pitchClass, 10);
+                if (majorDistPC.includes(pc)) votoMaj++;
+                if (minorDistPC.includes(pc)) votoMin++;
+            });
+        }
+        const newMode = (votoMin > votoMaj) ? 'minor' : 'major';
+        const newScalePCs = (newMode === 'major') ? intervalsMajor.map(n => (targetPC + n) % 12) : 
+                                                    intervalsMinor.map(n => (targetPC + n) % 12);
+        
+        const oldScalePCs = (tonActual.mode === 'major') ? intervalsMajor.map(n => (currentTonicPC + n) % 12) : 
+                                                           intervalsMinor.map(n => (currentTonicPC + n) % 12);
 
-                // Un 6/4 sobre la tónica original solo es señal de retorno si el acorde SIGUIENTE
-                // es el dominante de la tonalidad original (V → I auténtico de vuelta).
-                const nextAfterK = (k + 1 < results.length) ? results[k + 1] : null;
-                const esCadencialOriginal = (
-                    acordePosterior.rootPC === currentTonicPC &&
-                    acordePosterior.estadoTexto &&
-                    acordePosterior.estadoTexto.includes("2ª Inversión") &&
-                    nextAfterK && !nextAfterK.error &&
-                    nextAfterK.rootPC === originalDominantPC
-                );
+        // 3. REGLA DE ORO CORREGIDA: Ampliamos la ventana de búsqueda a i, i+1 y i+2 para evitar desfases
+        // y forzamos la conversión a número entero (parseInt)
+        [`chord${i}`, `chord${i+1}`, `chord${i+2}`].forEach(chordKey => {
+            const chordObj = structuralChords[chordKey];
+            if (!chordObj) return;
+            Object.values(chordObj).forEach(n => {
+                if (n && n.pitchClass !== undefined) {
+                    const pc = parseInt(n.pitchClass, 10);
+                    if (newScalePCs.includes(pc) && !oldScalePCs.includes(pc)) {
+                        tieneNotaDiferencial = true;
+                }
+                }
+            });
+        });
 
-                // El dominante de la tónica original solo señala retorno si efectivamente
-                // resuelve a continuación en la tónica original.
-                const dominanteResuelveOriginal = (
-                    acordePosterior.rootPC === originalDominantPC &&
-                    nextAfterK && !nextAfterK.error &&
-                    nextAfterK.rootPC === currentTonicPC
-                );
+        let esInflexion = !tieneNotaDiferencial;
+        const lookaheadLimit = Math.min(results.length, i + 6);
+        
+        for (let k = i + 2; k < lookaheadLimit; k++) {
+            if (!results[k].error && results[k].rootPC === currentTonicPC) {
+                esInflexion = true;
+                break;
+            }
+        }
 
-                if (esDominanteFugaz || dominanteResuelveOriginal || esCadencialOriginal) {
-                    esInflexion = true;
+        if (esInflexion) continue; 
+
+                const newTonicEng = pcToEnglishTonic(targetPC, newMode);
+        if (!newTonicEng) continue;
+
+         // --- CLASIFICACIÓN DEL TIPO DE MODULACIÓN (Pivote Diatónico/Cromático) ---
+        let tipoMod = "Directa";
+        let pivoteDesc = "";
+
+        // Buscar el verdadero acorde pivote (saltando los 6/4 cadenciales)
+        let idxPivot = i - 1; 
+
+        if (idxPivot >= 0) {
+            // Retroceder si el acorde previo es la tónica de destino en 2ª inversión (6/4 cadencial)
+            while (idxPivot >= 0) {
+                const temp = results[idxPivot];
+                if (temp && !temp.error && temp.rootPC === targetPC && 
+                    temp.estadoTexto && temp.estadoTexto.includes("2ª Inversión")) {
+                    idxPivot--;
+                } else {
                     break;
                 }
             }
         }
 
-        // Si es dominante secundaria, abortamos la modulación. El analizador de grados se encargará de poner (V/x)
-        if (esInflexion) {
-            continue; 
-        }
+        if (idxPivot >= 0) {
+            const prevStructural = structuralChords[`chord${idxPivot + 1}`]; // Acorde pivote real
+            const domStructural = structuralChords[`chord${i + 1}`];         // Acorde dominante (modulante)
 
-        const tipoSig = resRes.tipo || "";
-        const newMode = (tipoSig.includes("Menor") && !tipoSig.includes("Disminuido")) ? 'minor' : 'major';
-        const newTonicEng = pcToEnglishTonic(targetPC, newMode);
-        if (!newTonicEng) continue;
-
-         // PASO 4 — CLASIFICAR TIPO DE MODULACIÓN
-        let tipoMod       = "Directa";
-        let pivoteDesc    = "";
-
-        if (i > 0) {
-            const prevRes         = results[i - 1];
-            const prevStructural  = structuralChords[`chord${i}`];       // Acorde A (antes de D)
-            const domStructural   = structuralChords[`chord${i + 1}`];   // Acorde D (dominante modulante)
-
-            if (!prevRes.error && prevStructural) {
-
-                // ── Diatónica (acorde pivote) ──
-                const scalePCsVieja = getScalePCs(tonActual.tonic, tonActual.mode);
-                const scalePCsNueva = getScalePCs(newTonicEng, newMode);
-
+            if (prevStructural) {
                 const pcsA = [];
                 ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
-                    if (prevStructural[v]) pcsA.push(prevStructural[v].pitchClass);
+                    if (prevStructural[v] && prevStructural[v].pitchClass !== undefined) {
+                        pcsA.push(parseInt(prevStructural[v].pitchClass, 10));
+                    }
                 });
 
                 if (pcsA.length > 0) {
-                    const enAmbas = pcsA.every(pc => scalePCsVieja.includes(pc) && scalePCsNueva.includes(pc));
+                    // Si todas las notas del pivote están en la escala antigua Y en la nueva
+                    const enAmbas = pcsA.every(pc => oldScalePCs.includes(pc) && newScalePCs.includes(pc));
                     if (enAmbas) {
-                        tipoMod    = "Diatónica";
-                        pivoteDesc = ` — Acorde ${i} actúa como pivote (diatónico a ambas tonalidades)`;
+                        tipoMod = "Diatónica";
+                        let tonicalizado = false;
+
+                          // Comprobar si el pivote fue tonicalizado por su propia dominante
+                        if (idxPivot > 0) {
+                            const prePivotRes = results[idxPivot - 1]; // Acorde anterior al pivote
+                            const pivotRes = results[idxPivot];        // Acorde pivote
+
+                            if (prePivotRes && pivotRes && !prePivotRes.error && !pivotRes.error) {
+                                const targetEspPivot = mapDominantes[prePivotRes.fundamental];
+                                if (targetEspPivot && spanishToPC[targetEspPivot] === pivotRes.rootPC) {
+                                    tonicalizado = true;
+                                }
+                            }
+                        }
+
+                        if (tonicalizado) {
+                            tipoMod = "Diatónica (Pivote Tonicalizado)";
+                            pivoteDesc = ` — Acorde ${idxPivot + 1} es pivote, tonicalizado previamente por el Acorde ${idxPivot} (inflexión/escala melódica)`;
+                        } else {
+                            pivoteDesc = ` — Acorde ${idxPivot + 1} actúa como pivote diatónico`;
+                        }
                     }
                 }
 
-                // ── Cromática (choque de semitono en misma voz entre A y D) ──
+
+        // Falsa relación cromática: se comprueba siempre con el acorde inmediatamente anterior a la dominante
                 if (tipoMod === "Directa" && domStructural) {
+                    const acordeJustoAntes = structuralChords[`chord${i}`];
                     ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
-                        const nA = prevStructural[v];
+                        const nA = acordeJustoAntes[v];
                         const nD = domStructural[v];
                         if (nA && nD && nA.baseName === nD.baseName && nA.realAcc !== nD.realAcc) {
                             tipoMod = "Cromática";
                         }
                     });
                 }
+            }
+        }
 
-                // ── Enarmónica (D es 7ª disminuida, 6ª aumentada o tríada aumentada) ──
-                if (tipoMod === "Directa") {
-                    if (tipo.includes("Disminuido") || tipo.includes("Sexta aumentada") || tipo.includes("Aumentado")) {
-                        tipoMod = "Enarmónica";
-                        pivoteDesc = ` — El Acorde ${i + 1} actúa como pivote enarmónico`;
+
+        // ── MODULACIÓN ENARMÓNICA ──────────────────────────────────────────────
+        // Se activa cuando ninguno de los tests anteriores clasificó la modulación
+        // y el acorde modulante es uno de los tres tipos con ambigüedad enarmónica:
+        //   1. Tríada aumentada (III+ del modo menor): cada nota puede ser sensible
+        //      de una tonalidad menor distinta.
+        //   2. 7ª disminuida: cada nota puede ser sensible de dos tonalidades
+        //      homónimas (mayor y menor).
+        //   3. Sexta aumentada alemana / suiza: enarmónica de un acorde de V7,
+        //      permitiendo saltar a una tonalidad lejana.
+        //
+        // Test universal: el acorde modulante debe contener la nota (targetPC - 1)
+        // que es la sensible de la nueva tonalidad.
+        // La modulación enarmónica tiene prioridad sobre la cromática:
+        // una Sexta aumentada alemana que resuelve enarmónicamente produce
+        // una falsa relación cromática en el bajo (p.ej. A→Ab) que el test
+        // anterior clasifica como "Cromática" de forma incorrecta.
+        if (tipoMod === "Directa" || tipoMod === "Cromática") {
+            const esEnharmonizable = tipo === "Aumentado"
+                || tipo.includes("Dism7dism") || tipo.includes("Disminuido 7")
+                || tipo.includes("Sexta aumentada Alemana")
+                || tipo.includes("Sexta aumentada Suiza");
+
+            if (esEnharmonizable) {
+                const sensiblePC   = (targetPC - 1 + 12) % 12;
+                const pcsMod       = getChordPCsLocal(structuralChords[`chord${i+1}`]);
+
+                if (pcsMod.includes(sensiblePC)) {
+                    tipoMod = "Enarmónica";
+                    const sensibleNombre = pcNameES[sensiblePC];
+                    const chordIdx       = i + 1; // posición 1-indexed del acorde pivote
+
+                    if (tipo === "Aumentado") {
+                        pivoteDesc = ` — Acorde ${chordIdx}: tríada aumentada III (modo menor),`
+                                   + ` ${sensibleNombre} reinterpretada como sensible`;
+                    } else if (tipo.includes("Dism7dism") || tipo.includes("Disminuido 7")) {
+                        const modoDestino = newMode === 'minor' ? 'menor' : 'mayor';
+                        pivoteDesc = ` — Acorde ${chordIdx}: 7ª disminuida,`
+                                   + ` ${sensibleNombre} reinterpretada como sensible de ${modoDestino}`;
+                    } else {
+                        // Sexta aumentada alemana o suiza
+                        pivoteDesc = ` — Acorde ${chordIdx}: sexta aumentada alemana`
+                                   + ` reinterpretada enarmónicamente como V7`;
                     }
                 }
             }
         }
 
-              // --- NUEVO: Solo actualizar la tonalidad local si NO es una inflexión ---
+ // Aplicamos la modulación
         for (let j = i; j < results.length; j++) {
             tonalidadLocal[j] = { tonic: newTonicEng, mode: newMode };
         }
-
+        
         modulaciones.push({
-            acordeD:    i + 1,
-            acordeT:    resIdx + 1,
+            acordeD: i + 1,
+            acordeT: i + 2,
+            tipo: tipoMod,
             desdeTonica: tonActual.tonic,
-            desdeModo:   tonActual.mode,
+            desdeModo: tonActual.mode,
             haciaTonica: newTonicEng,
-            haciaModo:   newMode,
-            haciaEsp:    targetEsp,
-            tipo:        tipoMod,
-            pivoteDesc:  pivoteDesc
+            haciaModo: newMode,
+            haciaEsp: targetEsp,
+            pivoteDesc: pivoteDesc
         });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // POST-PROCESADO: Fusionar modulaciones consecutivas cuando la "tónica
+    // intermedia" es en realidad un acorde pivote diatónico tonicalizado.
+    //
+    // Patrón típico:   DoM → [VII°/Lam → Lam → D7] → SolM
+    // El programa detecta:  DoM→Lam  +  Lam→SolM
+    // Debería detectar:     DoM→SolM  (Diatónica, pivote=Lam tonicalizado)
+    //
+    // Condiciones de fusión:
+    //   1. Las dos modulaciones son muy próximas (≤ 3 acordes de distancia).
+    //   2. La tónica intermedia (destino de M1) es diatónica tanto a la
+    //      tonalidad de origen (M1.desde) como a la de destino (M2.hacia).
+    //      Esto es exactamente la definición de acorde pivote diatónico.
+    // ─────────────────────────────────────────────────────────────────────────
+    for (let m = 0; m < modulaciones.length - 1; m++) {
+        const m1 = modulaciones[m];
+        const m2 = modulaciones[m + 1];
+
+        // Condición 1: las dos modulaciones están suficientemente próximas
+        const gap = m2.acordeD - m1.acordeT;
+        if (gap > 3) continue;
+
+        // PCs de cada tonalidad
+        const origPC  = getTonicPC(m1.desdeTonica);
+        const midPC   = getTonicPC(m1.haciaTonica);
+        const finalPC = getTonicPC(m2.haciaTonica);
+
+        // Escalas de origen y destino final
+        const origScale  = (m1.desdeModo  === 'major')
+            ? intervalsMajor.map(n => (origPC  + n) % 12)
+            : intervalsMinor.map(n => (origPC  + n) % 12);
+        const finalScale = (m2.haciaModo === 'major')
+            ? intervalsMajor.map(n => (finalPC + n) % 12)
+            : intervalsMinor.map(n => (finalPC + n) % 12);
+
+        // Condición 2: la tónica intermedia es diatónica a origen Y a destino
+        if (!origScale.includes(midPC) || !finalScale.includes(midPC)) continue;
+
+        // ── FUSIÓN ──────────────────────────────────────────────────────────
+        // Revertir tonalidadLocal para los acordes "falsamente" asignados a la
+        // tónica intermedia: vuelven a pertenecer a la tonalidad de origen.
+        for (let j = m1.acordeD - 1; j <= m2.acordeD - 2; j++) {
+            tonalidadLocal[j] = { tonic: m1.desdeTonica, mode: m1.desdeModo };
+        }
+
+        const idxPivote = m1.acordeT; // posición 1-indexed del acorde pivote
+
+        modulaciones[m] = {
+            acordeD:    m1.acordeD,
+            acordeT:    m2.acordeT,
+            tipo:       "Diatónica (Pivote Tonicalizado)",
+            desdeTonica: m1.desdeTonica,
+            desdeModo:   m1.desdeModo,
+            haciaTonica: m2.haciaTonica,
+            haciaModo:   m2.haciaModo,
+            haciaEsp:    m2.haciaEsp,
+            pivoteDesc:  ` — Acorde ${idxPivote} actúa como pivote diatónico` +
+                         `, tonicalizado previamente por el Acorde ${m1.acordeD}`
+        };
+
+        // Eliminar M2 (ya absorbida en M1 fusionada)
+        modulaciones.splice(m + 1, 1);
+
+        // Retroceder el índice para volver a comprobar si hay más fusiones en cadena
+        m--;
     }
 
     return { tonalidadLocal, modulaciones };
 }
+
+
 
 function analyzeHarmony() {
 visualErrorState = [];
@@ -3847,44 +3987,10 @@ globalTonalidadLocal = tonalidadLocal;
 
             const getBaseType = (t) => t ? t.split('(')[0].trim().replace(" (dominante)", "") : "";
             // Permite tolerancia de 1 semitono para acomodar las variaciones de la escala diatónica
-            // (solo se usa en las repeticiones adicionales, 2ª, 3ª…)
             const approxEq = (a, b) => {
                 let d = Math.abs(a - b) % 12;
                 if (d > 6) d = 12 - d;
                 return d <= 1; 
-            };
-
-            // Mapea distancia en semitonos → clase de intervalo genérico
-            // 1=unísono, 2=2ª, 3=3ª, 4=4ª, 5=4ªaum/5ªdism, 6=5ª, 7=6ª, 8=7ª, 9=8ª
-            const genericClass = (midi1, midi2) => {
-                if (midi1 == null || midi2 == null) return null;
-                const d = Math.abs(midi2 - midi1) % 12;
-                //             0  1  2  3  4  5  6  7  8  9 10 11
-                return        [1, 2, 2, 3, 3, 4, 5, 6, 7, 7, 8, 8][d];
-            };
-
-            // Compara los tipos de intervalo de todas las voces entre
-            // el paso modelo (idxA→idxB) y el paso repetición (idxC→idxD).
-            // Índices 0-based de results; chord en structuralChords = idx+1.
-            const mismosIntervalosPorVoz = (idxA, idxB, idxC, idxD) => {
-                const chA = structuralChords[`chord${idxA + 1}`];
-                const chB = structuralChords[`chord${idxB + 1}`];
-                const chC = structuralChords[`chord${idxC + 1}`];
-                const chD = structuralChords[`chord${idxD + 1}`];
-                for (const v of ['soprano', 'alto', 'tenor', 'bass']) {
-                    const nA = chA && chA[v], nB = chB && chB[v];
-                    const nC = chC && chC[v], nD = chD && chD[v];
-                    const ausModelо = !nA || !nB;
-                    const ausRep    = !nC || !nD;
-                    // Voz ausente en ambos → la saltamos
-                    if (ausModelо && ausRep) continue;
-                    // Voz presente en uno solo → asimetría
-                    if (ausModelо !== ausRep) return false;
-                    const gAB = genericClass(nA.midi, nB.midi);
-                    const gCD = genericClass(nC.midi, nD.midi);
-                    if (gAB !== gCD) return false;
-                }
-                return true;
             };
 
             let i = 0;
@@ -3906,37 +4012,23 @@ globalTonalidadLocal = tonalidadLocal;
                     // Distancia de transposición del primer acorde del modelo a su repetición
                     const transpBase = (results[i+L].rootPC - results[i].rootPC + 12) % 12;
                     
-                    // La transposición debe ser distinta de 0 para que sea secuencia
+                    // CORRECCIÓN: La transposición debe ser estrictamente 0 para descartarla
                     if (transpBase === 0) continue; 
 
                     let coincide = true;
                     let esReal = true;
 
-                    // 1) Cada acorde del modelo se transpone exactamente igual en la repetición
                     for (let k = 0; k < L; k++) {
                         const r1 = results[i+k];
                         const r2 = results[i+L+k];
                         
                         const tActual = (r2.rootPC - r1.rootPC + 12) % 12;
-                        // Comparación EXACTA modelo→1ª repetición
-                        if (tActual !== transpBase || r1.estadoTexto !== r2.estadoTexto) {
+                        if (!approxEq(tActual, transpBase) || r1.estadoTexto !== r2.estadoTexto) {
                             coincide = false;
                             break;
                         }
                         if (getBaseType(r1.tipo) !== getBaseType(r2.tipo)) {
                             esReal = false;
-                        }
-                    }
-
-                    // 2) Los intervalos melódicos internos de cada voz son del mismo
-                    //    tipo genérico (2ª↔2ª, 3ª↔3ª, 5ª↔5ª…) en el modelo y la repetición.
-                    //    Esto evita que una serie de sextas sea confundida con secuencia.
-                    if (coincide && L >= 2) {
-                        for (let k = 0; k < L - 1; k++) {
-                            if (!mismosIntervalosPorVoz(i+k, i+k+1, i+L+k, i+L+k+1)) {
-                                coincide = false;
-                                break;
-                            }
                         }
                     }
 
@@ -4890,12 +4982,46 @@ function getNoteDisplay(noteObj) {
     return name + "" + octave;
 }
 
-function dragEndHind() {
-    if (!isDraggingHind) return;
-    isDraggingHind = false;
-    localStorage.setItem('hindemithPos', JSON.stringify({ x: xOffHind, y: yOffHind }));
-}
 
+
+function buildGlobalMeasureContext() {
+    const context = {}; 
+    let activeInMeasure = {}; 
+    
+    const parts = currentMeter.split('/');
+    const chordsPerMeasure = parseInt(parts[0]);
+    let beats = 0;
+    
+    for (let k = 1; k <= totalChords; k++) {
+        // Guardamos el contexto activo antes de procesar el acorde actual
+        context[k] = { ...activeInMeasure };
+        
+        ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
+            const p = parseNoteForAnalysis(getCombinedNote(v, k));
+            if (p && p.baseName !== "") {
+                if (p.userAcc !== "") {
+                    activeInMeasure[p.baseName] = p.userAcc;
+                }
+            }
+        });
+        
+        let dur = chordDurations[k] || 1;
+        beats += dur;
+        let drawBar = false;
+        if (firstBarlineIndex > 0) {
+            if (k === firstBarlineIndex) drawBar = true;
+            else if (k > firstBarlineIndex && beats >= chordsPerMeasure) drawBar = true;
+        } else if (beats >= chordsPerMeasure) {
+            drawBar = true;
+        }
+        
+        if (drawBar) {
+            activeInMeasure = {}; // Reseteamos al cambiar de compás
+            beats = 0;
+        }
+    }
+    return context;
+}
 
 
 function renderScore() {
@@ -4965,31 +5091,28 @@ function renderScore() {
         if (dur === 4) return "4";
         return dur.toString();
     };
+const globalMeasureContext = buildGlobalMeasureContext();
 
     const getAbcVoice = (vId) => {
-    let str = "";
-    let currentMeasureBeats = 0;
-    let measureAccidentals = {}; 
-    let skipTo = 0; // NUEVO: Controlador para saltar las notas que ya hemos fusionado
+        let str = "";
+        let currentMeasureBeats = 0;
+        let measureAccidentals = {};
+        let skipTo = 0;
 
-    for (let i = 1; i <= totalChords; i++) {
-        // Reiniciar rastreo al inicio de compás
-        if (currentMeasureBeats === 0) {
-            measureAccidentals = {};
-        }
+        for (let i = 1; i <= totalChords; i++) {
+            if (currentMeasureBeats === 0) measureAccidentals = {};
+            if (i < skipTo) continue;
 
-        if (i < skipTo) continue; // NUEVO: Si la nota ya se sumó a la anterior, la saltamos
-
-                const p = parseNoteForAnalysis(getCombinedNote(vId, i));
+            const p = parseNoteForAnalysis(getCombinedNote(vId, i));
 
         let mergedDur = chordDurations[i] || 1;
-        let addTie = false;
-        let nextI = i + 1;
-        let currentMidi = realMap[i] ? realMap[i][vId] : null;
-        let isRest = (!p || p.baseName === "");
+            let addTie = false;
+            let nextI = i + 1;
+            let isRest = (!p || p.baseName === "");
+            let currentMidi = realMap[i] ? realMap[i][vId] : null;
 
-        if (isGrouped) {
-            let tempBeats = Math.round((currentMeasureBeats + mergedDur) * 100) / 100;
+            if (isGrouped) {
+                let tempBeats = Math.round((currentMeasureBeats + mergedDur) * 100) / 100;
             
             while (nextI <= totalChords) {
                 let isEndOfMeasure = false;
@@ -5076,26 +5199,50 @@ function renderScore() {
                 let prefix = "";
                 if (p.isOrnament) prefix = (vId === 'soprano' || vId === 'tenor') ? '"^X"' : '"_X"';
                 
-                let acc = "";
+                                let acc = "";
                 if (p.userAcc === 'n') acc = "=";
                 else if (p.userAcc === '#') acc = "^";
                 else if (p.userAcc === 'b') acc = "_";
                 else if (p.userAcc === '##') acc = "^^";
                 else if (p.userAcc === 'bb') acc = "__";
 
-                // --- LÓGICA DE OCULTACIÓN DE ALTERACIÓN REPETIDA ---
-                const noteKey = p.baseName + p.octave; // Ej: "A4"
+                const tVal = document.getElementById('tonic').value;
+                const mVal = document.getElementById('mode').value;
+                const sig = keySignatures[mVal][tVal] || {};
+                const keyAcc = sig[p.baseName] || "";
                 
-                if (p.userAcc !== "") {
-                    // Si ya escribimos esta alteración en este compás para esta nota/octava
-                    if (measureAccidentals[noteKey] === p.userAcc) {
-                        acc = ""; // No escribir el símbolo (ya se asume)
-                    } else {
-                        // Si es nueva o cambió, la registramos
-                        measureAccidentals[noteKey] = p.userAcc;
+                const activeAcc = globalMeasureContext[i][p.baseName];
+                
+                // Lógica de cancelación cruzada (entre distintas voces y misma voz)
+                if (p.userAcc === "") {
+                    if (activeAcc !== undefined && activeAcc !== keyAcc) {
+                        // Forzar símbolo de cancelación si se alteró previamente en el compás
+                        if (keyAcc === "") acc = "=";
+                        else if (keyAcc === "#") acc = "^";
+                        else if (keyAcc === "b") acc = "_";
                     }
-                } 
-                // ---------------------------------------------------
+                }
+
+                const noteKey = p.baseName + p.octave; 
+                if (acc !== "") {
+                    if (measureAccidentals[noteKey] === acc) {
+                        acc = ""; 
+                    } else {
+                        measureAccidentals[noteKey] = acc;
+                    }
+                } else {
+                    let abcKeyAcc = "";
+                    if (keyAcc === "#") abcKeyAcc = "^";
+                    if (keyAcc === "b") abcKeyAcc = "_";
+                    if (keyAcc === "") abcKeyAcc = "=";
+
+                    if (measureAccidentals[noteKey] && measureAccidentals[noteKey] !== abcKeyAcc) {
+                        acc = abcKeyAcc;
+                        measureAccidentals[noteKey] = acc;
+                    } else {
+                        measureAccidentals[noteKey] = abcKeyAcc;
+                    }
+                }
 
                 let n = p.baseName;
                 if (p.octave === 2) n += ",,";
@@ -6799,6 +6946,7 @@ function guardarCambiosDesdeEditor() {
 }
 
 function generateCurrentAbcString() {
+   const globalMeasureContext = buildGlobalMeasureContext()
     const parts = currentMeter.split('/');
     const chordsPerMeasure = parseInt(parts[0]);
     const denom = parts[1];
@@ -6829,7 +6977,8 @@ K:${tVal}${mVal === 'minor' ? 'm' : ''}
         abc += `${voiceDefs[vId]}\n`;
         let measureBeats = 0;
         let lineBuffer = "";
-        let skipTo = 0; // NUEVO: Controlador para saltar notas fusionadas al exportar
+        let skipTo = 0; 
+        let measureAccidentals = {};
 
         for (let i = 1; i <= totalChords; i++) {
             if (i < skipTo) continue; // NUEVO
@@ -6935,7 +7084,49 @@ K:${tVal}${mVal === 'minor' ? 'm' : ''}
                 lineBuffer += ((p && p.isOrnament) ? "x" : "z") + dur;
             } else {
                 let prefix = (p.isOrnament) ? ((vId === 1 || vId === 3) ? '"^X"' : '"_X"') : "";
-                let acc = (p.userAcc === 'n') ? "=" : (p.userAcc === '#') ? "^" : (p.userAcc === 'b') ? "_" : (p.userAcc === '##') ? "^^" : (p.userAcc === 'bb') ? "__" : "";
+                                let acc = "";
+                if (p.userAcc === 'n') acc = "=";
+                else if (p.userAcc === '#') acc = "^";
+                else if (p.userAcc === 'b') acc = "_";
+                else if (p.userAcc === '##') acc = "^^";
+                else if (p.userAcc === 'bb') acc = "__";
+
+                const tVal = document.getElementById('tonic').value;
+                const mVal = document.getElementById('mode').value;
+                const sig = keySignatures[mVal][tVal] || {};
+                const keyAcc = sig[p.baseName] || "";
+                
+                const activeAcc = globalMeasureContext[i][p.baseName];
+                
+                if (p.userAcc === "") {
+                    if (activeAcc !== undefined && activeAcc !== keyAcc) {
+                        if (keyAcc === "") acc = "=";
+                        else if (keyAcc === "#") acc = "^";
+                        else if (keyAcc === "b") acc = "_";
+                    }
+                }
+
+                const noteKey = p.baseName + p.octave;
+                if (acc !== "") {
+                    if (measureAccidentals[noteKey] === acc) {
+                        acc = ""; 
+                    } else {
+                        measureAccidentals[noteKey] = acc;
+                    }
+                } else {
+                    let abcKeyAcc = "";
+                    if (keyAcc === "#") abcKeyAcc = "^";
+                    if (keyAcc === "b") abcKeyAcc = "_";
+                    if (keyAcc === "") abcKeyAcc = "=";
+
+                    if (measureAccidentals[noteKey] && measureAccidentals[noteKey] !== abcKeyAcc) {
+                        acc = abcKeyAcc;
+                        measureAccidentals[noteKey] = acc;
+                    } else {
+                        measureAccidentals[noteKey] = abcKeyAcc;
+                    }
+                }
+
                 
                 let n = p.baseName;
                 let abcNote = n;
@@ -6964,6 +7155,7 @@ K:${tVal}${mVal === 'minor' ? 'm' : ''}
             if (drawBar) {
                 lineBuffer += (i < totalChords) ? " | " : " |]";
                 measureBeats = 0;
+                measureAccidentals = {};
                 addSpace = false;
             } else if (addSpace) {
                 lineBuffer += " ";
@@ -7897,12 +8089,11 @@ function toggleAgrupar() {
         <div style="padding: 25px; overflow-y: auto; line-height: 1.6; color: #cbd5e1; font-size: 0.95rem;">
             
             <div style="margin-bottom: 20px;">
-                <h4 style="color: #60a5fa; border-bottom: 1px solid #3b82f6; padding-bottom: 5px; margin-top: 0;">1. Configuración Inicial</h4>
-                <p>Antes de empezar, configura tu ejercicio desde el panel superior:</p>
+                <h4 style="color: #60a5fa; border-bottom: 1px solid #3b82f6; padding-bottom: 5px; margin-top: 0;">1. Configuración Básica</h4>
                 <ul style="list-style-type: disc; padding-left: 20px; color: #94a3b8;">
-                    <li><strong>Tonalidad:</strong> Selecciona la Tónica y el Modo (Mayor/Menor). También puedes transportar tu partitura al seleccionar una nueva tonalidad.</li>
-                    <li><strong>Compás:</strong> En el menú <em>Edición</em>, elige el compás (4/4, 3/4, 6/8, etc.).</li>
-                    <li><strong>Anacrusa:</strong> Si tu ejercicio empieza en anacrusa, escribela y luego ve a <em>Edición > Anacrusa</em>.</li>
+                    <li><strong>Tonalidad:</strong> Selecciona Tónica y Modo. Si cambias la tónica con notas ya escritas, el programa te preguntará si quieres transportar la partitura completa.</li>
+                    <li><strong>Compás y Ritmo:</strong> En <em>Edición</em>, ajusta el compás. Usa el selector de valores (⏱️) para cambiar la duración del acorde actual o insertar silencios.</li>
+                    <li><strong>Anacrusa:</strong> Escribe las notas iniciales y usa <em>Edición > Anacrusa</em> para fijar la primera línea divisoria.</li>
                 </ul>
             </div>
 
@@ -7910,129 +8101,115 @@ function toggleAgrupar() {
                 <div>
                     <h4 style="color: #60a5fa; border-bottom: 1px solid #3b82f6; padding-bottom: 5px;">2. Escribir Notas</h4>
                     <ul style="list-style: none; padding: 0;">
-                        <li style="margin-bottom: 8px;">🎹 <strong>Piano Virtual:</strong> Haz clic en las teclas. Detecta la octava automáticamente según la voz.</li>
-                        <li style="margin-bottom: 8px;">⌨️ <strong>Teclado PC:</strong> Usa las teclas <strong style="color:#fff">A, B, C, D, E, F, G</strong> para escribir notas rápidas.</li>
-                        <li style="margin-bottom: 8px;">🖱️ <strong>Arrastrar (Drag & Drop):</strong> Haz clic sobre una nota en la partitura y <strong style="color:#fff">arrástrala verticalmente</strong> para cambiar su altura cromáticamente.</li>
+                        <li style="margin-bottom: 8px;">🎹 <strong>Piano:</strong> Clic en las teclas. Detecta la octava según la voz.</li>
+                        <li style="margin-bottom: 8px;">⌨️ <strong>Teclado PC:</strong> Usa <strong style="color:#fff">A, B, C, D, E, F, G</strong> para entrada rápida.</li>
+                        <li style="margin-bottom: 8px;">🖱️ <strong>Arrastrar:</strong> Clic sobre una nota y <strong style="color:#fff">arrastra arriba/abajo</strong> para cambiar su altura por semitonos.</li>
+                        <li style="margin-bottom: 8px;">✨ <strong>Notas de Adorno:</strong> Activa el modo Adorno para que el analizador ignore armónicamente notas de paso o floreos.</li>
                     </ul>
                 </div>
                 <div>
-                    <h4 style="color: #60a5fa; border-bottom: 1px solid #3b82f6; padding-bottom: 5px;">3. Navegación</h4>
+                    <h4 style="color: #60a5fa; border-bottom: 1px solid #3b82f6; padding-bottom: 5px;">3. Navegación e Instrumentos</h4>
                     <ul style="list-style: none; padding: 0;">
-                        <li style="margin-bottom: 8px;">⬅️ ➡️ <strong>Flechas:</strong> Moverse entre acordes.</li>
-                        <li style="margin-bottom: 8px;">⬆️ ⬇️ <strong>Flechas:</strong> Cambiar de voz (Soprano, Alto, Tenor, Bajo).</li>
-                        <li style="margin-bottom: 8px;">➕ <strong>Añadir Acorde:</strong> Botón "Añadir" o flecha derecha en el último acorde.</li>
+                        <li style="margin-bottom: 8px;">⬅️ ➡️ <strong>Acordes:</strong> Moverse o crear nuevos.</li>
+                        <li style="margin-bottom: 8px;">⬆️ ⬇️ <strong>Voces:</strong> Cambiar entre S, C, T, B.</li>
+                        <li style="margin-bottom: 8px;">🎹 <strong>Instrumentos:</strong> Cambia el timbre (Piano, Cuerdas, Coro, Arpa) desde el panel central.</li>
+                        <li style="margin-bottom: 8px;">🔀 <strong>Enarmonía:</strong> Alterna la nota seleccionada entre su equivalente sostenido o bemol.</li>
                     </ul>
                 </div>
             </div>
 
             <div style="margin-bottom: 20px;">
-                <h4 style="color: #60a5fa; border-bottom: 1px solid #3b82f6; padding-bottom: 5px;">4. Herramientas Avanzadas</h4>
-                
-                <div style="background: rgba(15, 23, 42, 0.5); padding: 10px; border-radius: 6px; margin-bottom: 10px; border-left: 3px solid #16a34a;">
-                    <strong>🎼 Secuencias Armónicas — Marcas y corrección:</strong>
-                    <ul style="margin-top:6px; padding-left:18px; color:#94a3b8; font-size:0.9em;">
-                        <li>El <strong style="color:#fff">Modelo</strong> (corchete negro) se analiza con todas sus faltas.</li>
-                        <li>El enlace <strong>Modelo → 1ª Repetición</strong> también se señala si hay faltas.</li>
-                        <li>Las <strong style="color:#16a34a">Repeticiones</strong> (corchetes verdes) no muestran faltas internas si el Modelo estaba correcto.</li>
-                        <li>El enlace <strong>última Repetición → siguiente acorde</strong> sí se señala.</li>
-                    </ul>
-                </div>
-
-                <div style="background: rgba(15, 23, 42, 0.5); padding: 10px; border-radius: 6px; margin-bottom: 10px;">
-                    <strong>💡 Sugerir Acorde (Menú Edición):</strong> 
-                    Selecciona una nota en el Bajo y usa esta herramienta. Puedes escribir un cifrado (ej: "6 | 4") para que el sistema construya el acorde automáticamente respetando la tesitura, o dejarlo en blanco para ver opciones diatónicas.
-                </div>
-
-                <div style="background: rgba(15, 23, 42, 0.5); padding: 10px; border-radius: 6px; margin-bottom: 10px;">
-                    <strong>👂 Modo Audición:</strong> 
-                    Oculta la partitura visualmente pero permite reproducir el audio. Ideal para dictados o entrenamiento auditivo.
-                </div>
-
-                <ul style="list-style-type: circle; padding-left: 20px; color: #94a3b8;">
-                    <li><strong>Valores Rítmicos:</strong> En el menú Edición, cambia la duración de todas las notas de un mismo acorde o inserta silencios.</li>
-                    <li><strong>Destacar Voz:</strong> Activa la casilla "Destacar Voz" en el panel superior para escuchar una línea melódica por encima del resto.</li>
+                <h4 style="color: #60a5fa; border-bottom: 1px solid #3b82f6; padding-bottom: 5px;">4. Herramientas de Edición</h4>
+                <ul style="list-style-type: disc; padding-left: 20px; color: #94a3b8;">
+                    <li><strong>Sugerir Acorde:</strong> Selecciona una nota en el bajo y usa esta opción. Puedes escribir un cifrado interválico (ej. <code>6,4</code> o <code>#7</code>) para que el sistema construya el acorde, o dejarlo en blanco para ver sugerencias diatónicas que no cometan faltas de enlace.</li>
+                    <li><strong>Cifrado Barroco:</strong> El programa calcula y muestra automáticamente el bajo cifrado interválico debajo de la partitura.</li>
+                    <li><strong>Agrupar (🔗):</strong> Fusiona notas repetidas en duraciones más largas o ligaduras. <em>El análisis se desactiva en este modo para evitar falsos errores rítmicos.</em></li>
+                    <li><strong>Editor Código ABC:</strong> Acceso al código fuente de la partitura para ediciones manuales.</li>
+                    <li><strong>Modo Audición:</strong> Oculta la partitura visual para practicar dictados armónicos.</li>
                 </ul>
             </div>
 
             <div style="margin-bottom: 20px;">
-                <h4 style="color: #60a5fa; border-bottom: 1px solid #3b82f6; padding-bottom: 5px;">5. El Analizador</h4>
-                <p>Pulsa el botón verde <strong>Analizar</strong> para revisar tu ejercicio.</p>
+                <h4 style="color: #60a5fa; border-bottom: 1px solid #3b82f6; padding-bottom: 5px;">5. Analizador y Modulaciones</h4>
+                <p>El botón <strong>Analizar</strong> revisa reglas escolásticas (enlaces, tesituras, duplicaciones) e identifica la sintaxis armónica.</p>
                 
-                <div style="margin: 15px 0;">
-                    <strong style="color: #fbbf24;">📋 Lista de Errores (Códigos de color):</strong>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
-                        <span style="background: rgba(220, 38, 38, 0.2); border-left: 3px solid #dc2626; padding: 5px 10px; border-radius: 4px;">❌ Faltas</span>
-                        <span style="background: rgba(245, 158, 11, 0.2); border-left: 3px solid #f59e0b; padding: 5px 10px; border-radius: 4px;">⚠️ Advertencias</span>
-                        <span style="background: rgba(59, 130, 246, 0.2); border-left: 3px solid #3b82f6; padding: 5px 10px; border-radius: 4px;">ℹ️ Información</span>
-                    </div>
+                <div style="margin: 10px 0;">
+                    <strong style="color: #fbbf24;">🔀 Detección de Modulaciones:</strong>
+                    <ul style="margin-top:5px; padding-left:18px; color:#94a3b8; font-size:0.9em;">
+                        <li><strong style="color:#34d399">Diatónica:</strong> Transición a través de un acorde pivote común a ambas tonalidades.</li>
+                        <li><strong style="color:#f87171">Cromática:</strong> Modulación directa provocada por la alteración cromática de una nota.</li>
+                        <li><strong style="color:#c084fc">Enarmónica:</strong> Reinterpretación de la función de un acorde (ej. 6ª Aumentada que resuelve como Dominante).</li>
+                    </ul>
                 </div>
-                
+
                 <div style="margin: 15px 0;">
-                    <strong style="color: #fbbf24;">🎼 Marcas Visuales en la Partitura:</strong>
-                    <div style="display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 10px; font-size: 0.9em;">
+                    <strong style="color: #fbbf24;">🎼 Diccionario de Marcas Visuales:</strong>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; margin-top: 10px; font-size: 0.9em; color:#cbd5e1;">
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 30px; height: 3px; background: #dc2626;"></div>
-                            <span><strong>Línea roja sólida:</strong> Quintas/Octavas paralelas</span>
+                            <div style="width: 25px; height: 3px; background: #dc2626;"></div>
+                            <span><strong>Roja sólida:</strong> 5ª/8ª paralelas</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 30px; height: 3px; background: #f97316; border-top: 3px dashed #f97316;"></div>
-                            <span><strong>Línea naranja punteada:</strong> Quintas/Octavas directas</span>
+                            <div style="width: 25px; height: 3px; background: #f97316; border-top: 3px dashed #f97316;"></div>
+                            <span><strong>Naranja punteada:</strong> 5ª/8ª directas</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 16px; height: 16px; border: 2px solid #dc2626; border-radius: 50%;"></div>
+                            <div style="width: 25px; height: 3px; background: #3b82f6; border-top: 3px dashed #3b82f6;"></div>
+                            <span><strong>Azul punteada:</strong> Disonancias consecutivas</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div style="width: 14px; height: 14px; border: 2px solid #dc2626; border-radius: 50%;"></div>
                             <span><strong>Círculo rojo:</strong> Salto melódico prohibido</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 30px; height: 3px; background: #9333ea;"></div>
+                            <div style="width: 25px; height: 3px; background: #9333ea;"></div>
                             <span><strong>Línea morada:</strong> Cruzamiento de voces</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 30px; height: 0; border-top: 2px solid #ef4444; position: relative;">
+                            <div style="width: 25px; height: 0; border-top: 2px solid #ef4444; position: relative;">
                                 <span style="position: absolute; right: -5px; top: -6px; color: #ef4444;">▶</span>
                             </div>
                             <span><strong>Flecha roja:</strong> Sensible sin resolución</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 30px; height: 3px; background: #000000;"></div>
-                            <span><strong>Corchete negro (Modelo):</strong> Modelo de la secuencia armónica</span>
+                            <div style="width: 25px; height: 3px; background: #000000;"></div>
+                            <span><strong>Corchetes (negro/verde):</strong> Secuencia armónica (Modelo/Rep.)</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 30px; height: 3px; background: #16a34a;"></div>
-                            <span><strong>Corchete verde (Rep.):</strong> Repetición del modelo de la secuencia</span>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 16px; height: 16px; border: 2px solid #3b82f6;"></div>
-                            <span><strong>Rectángulo azul:</strong> Nota fuera de tesitura</span>
+                            <div style="width: 14px; height: 14px; border: 2px solid #3b82f6;"></div>
+                            <span><strong>Caja azul:</strong> Nota fuera de tesitura</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div style="margin-bottom: 10px;">
-                <h4 style="color: #60a5fa; border-bottom: 1px solid #3b82f6; padding-bottom: 5px;">6. Atajos de Teclado</h4>
-                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; font-family: monospace; font-size: 0.9em;">
-                    <div><span style="background:#334155; padding:2px 5px; border-radius:4px;">Ctrl + Z</span> Deshacer</div>
-                    <div><span style="background:#334155; padding:2px 5px; border-radius:4px;">Ctrl + Y</span> Rehacer</div>
-                    <div><span style="background:#334155; padding:2px 5px; border-radius:4px;">Ctrl + S</span> Guardar (.abc)</div>
-                    <div><span style="background:#334155; padding:2px 5px; border-radius:4px;">Ctrl + O</span> Abrir (.abc)</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div>
+                    <h4 style="color: #60a5fa; border-bottom: 1px solid #3b82f6; padding-bottom: 5px;">6. Atajos Rápidos</h4>
+                    <div style="display: flex; flex-direction: column; gap: 5px; font-family: monospace; font-size: 0.9em; color:#94a3b8;">
+                        <div><span style="background:#334155; padding:2px 5px; border-radius:4px; color:#fff;">Ctrl + Z</span> Deshacer</div>
+                        <div><span style="background:#334155; padding:2px 5px; border-radius:4px; color:#fff;">Ctrl + Y</span> Rehacer</div>
+                        <div><span style="background:#334155; padding:2px 5px; border-radius:4px; color:#fff;">Ctrl + S</span> Guardar (.abc)</div>
+                        <div><span style="background:#334155; padding:2px 5px; border-radius:4px; color:#fff;">Ctrl + O</span> Abrir (.abc)</div>
+                    </div>
                 </div>
-            </div>
-
-            <div style="background: rgba(30, 41, 59, 0.5); padding: 15px; border-radius: 6px; margin-top: 20px; border-left: 4px solid #a855f7; font-size: 0.9em;">
-                <strong>Nota sobre Exportación:</strong> 
-                <ul>
-                    <li>Usa <strong>Guardar Proyecto (.json)</strong> para guardar tu trabajo y editarlo después sin perder datos.</li>
-                    <li>Usa <strong>Exportar PNG/PDF</strong> solo para imprimir o compartir la imagen final.</li>
-                </ul>
+                <div>
+                    <h4 style="color: #60a5fa; border-bottom: 1px solid #3b82f6; padding-bottom: 5px;">7. Guardar y Exportar</h4>
+                    <ul style="list-style-type: circle; padding-left: 20px; color: #94a3b8; font-size: 0.9em;">
+                        <li><strong>Proyecto (.json):</strong> Guarda el estado exacto del programa para continuar editando en otro momento.</li>
+                        <li><strong>Exportar PNG/PDF:</strong> Genera imágenes vectoriales o documentos en tamaño A4 listos para imprimir.</li>
+                    </ul>
+                           </div>
+        </div>
                 <div style="margin-top:10px; font-style:italic; color: #94a3b8;">
                     Este software es una herramienta de apoyo. Siempre verifica las correcciones con tu profesor.
                 </div>
-            </div>
-        </div>
+     
         
-        <div style="padding: 15px; background: #0f172a; border-top: 1px solid #334155; text-align: right;">
+        
+        
             <button onclick="cerrarManual()" style="padding: 10px 24px; background: linear-gradient(to right, #2563eb, #1d4ed8); border: none; color: white; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.2);">Entendido</button>
-        </div>
+      
     </div>
 </div>
 
