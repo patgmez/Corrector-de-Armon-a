@@ -3442,6 +3442,26 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         }
 
         if (targetPC === currentTonicPC) continue;
+              // ── NUEVO: Validar funcionalidad estricta de Tríadas Mayores ──
+        if (tipo === "Mayor" || tipo === "Mayor (omit 5)") {
+            const nextRes = results[i + 1];
+            if (nextRes && !nextRes.error) {
+                const rotaPC = (targetPC + 9) % 12;  // Resolución a VI (Mayor)
+                const rotamPC = (targetPC + 8) % 12; // Resolución a VI (menor)
+                
+                const esResolucionDirecta = (nextRes.rootPC === targetPC);
+                const esResolucionRota = (nextRes.rootPC === rotaPC || nextRes.rootPC === rotamPC);
+                
+                // Si asume que es cadencia rota, el destino NO puede ser un acorde inestable
+                const esSiguienteInestable = nextRes.tipo.includes("Sexta") || nextRes.tipo.includes("7") || nextRes.tipo.includes("Dism") || nextRes.tipo.includes("Aumentado");
+                
+                if (!esResolucionDirecta && (!esResolucionRota || esSiguienteInestable)) {
+                    continue; // Falsa alarma: no resuelve funcionalmente
+                }
+            }
+        }
+
+        
 
         let tieneNotaDiferencial = false;
 
@@ -3713,6 +3733,25 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
 
         // Retroceder el índice para volver a comprobar si hay más fusiones en cadena
         m--;
+    }
+    // ── NUEVO POST-PROCESADO: Filtrar cromatismos de paso y falsas modulaciones ──
+    for (let m = modulaciones.length - 2; m >= 0; m--) {
+        const m1 = modulaciones[m];
+        const m2 = modulaciones[m + 1];
+        
+        // Si la supuesta tonalidad dura 2 acordes o menos, es transitoria
+        if (m2.acordeD - m1.acordeD <= 2) {
+            // 1. Revertir esos acordes a la tonalidad base
+            for (let j = m1.acordeD - 1; j < m2.acordeD - 1; j++) {
+                tonalidadLocal[j] = { tonic: m1.desdeTonica, mode: m1.desdeModo };
+            }
+            // 2. Corregir el punto de partida de la siguiente modulación real
+            m2.desdeTonica = m1.desdeTonica;
+            m2.desdeModo = m1.desdeModo;
+            
+            // 3. Destruir la modulación falsa
+            modulaciones.splice(m, 1);
+        }
     }
 
     return { tonalidadLocal, modulaciones };
