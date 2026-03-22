@@ -2073,7 +2073,7 @@ function checkParallelsStrict(c1, c2, res1, res2, chordIndex, localTonic, localM
             const diss2 = isDissonant(int2, v2, v1);
 
             if (diss1 && diss2) {
-                infos.push(`Disonancias consecutivas entre ${vNames[v1]} y ${vNames[v2]}: Asegúrate de que el enlace es correcto.`);
+                infos.push(`Disonancias seguidas por movimiento directo entre ${vNames[v1]} y ${vNames[v2]}: Asegúrate de que el enlace sea correcto.`);
                 badPairs.push(`${v1}-${v2}`);
                 
                 visualErrorState.push({ type: 'dissonance', c1: chordIndex, c2: chordIndex + 1, v1: v1, v2: v2 });
@@ -4549,10 +4549,10 @@ const cifrado = generarCifradoZamacois(
 
    
         html += `<div class="chord-description-section" style="border-left-color:#a855f7;">
-                    <h3 style="color:#c084fc;">Análisis Sintáctico</h3>
+                    <h3 style="color:#c084fc;">Cadencia:</h3>
                     <div class="error-item error-info">
                         <span>🎹</span>
-                        <div><strong>Cadencia:</strong> ${cadence}</div>
+                        <div>${cadence}, NOTA:se  señala los últimos acordes y, en un ejercicio de armonía, no siempre es una cadencia. </div>
                     </div>
                 </div>`;
         
@@ -5796,17 +5796,25 @@ function generarCifradoZamacois(chord, tonicVal, modeVal, prevChord = null, next
                      }
                  }
             }
-            // PRIORIDAD 2: DOMINANTES
+                        // PRIORIDAD 2: DOMINANTES
             else if (esDominante7) {
-                if (inv === 1) { if (i.num === 6 || i.num === 5) show = true; }
+                // Anulamos cualquier alteración accidental previa (ej. b5) para forzar la estructura fija
+                show = false; 
+                
+                if (inv === 0) { 
+                    if (i.num === 7 || i.isSensible) show = true; // Forzamos 7 | +
+                }
+                else if (inv === 1) { 
+                    if (i.num === 6 || i.num === 5) show = true; // Forzamos 6 | 5 (la 5 suele ser barrada/sensible)
+                }
                 else if (inv === 2) { 
-                    if (i.num === 4 || i.num === 3) show = false; 
-                    if (i.num === 6 && i.isSensible) show = true;
+                    if (i.num === 6 && i.isSensible) show = true; // Forzamos +6
                 }
                 else if (inv === 3) { 
-                    if (i.num === 4) show = true; // Acorde 8: Muestra la 4ª (sensible)
+                    if (i.num === 4 ) show = true; // Forzamos +4 
                 } 
             }
+
             else if (esNovena) {
                 if (inv === 0) { if (i.num === 7) show = true; } 
                 else if (inv === 1) { if (i.num === 6 || i.num === 5 || i.num === 7) show = true; }
