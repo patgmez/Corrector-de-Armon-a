@@ -3399,6 +3399,10 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
             // Probamos todos los candidatos y elegimos el que más notas diferenciales
             // (notas de la escala candidata no presentes en la escala de origen)
             // acumule en los siguientes acordes.
+            //
+            // CANDIDATO PRIORITARIO (desempate):
+            //   - Tríada aumentada: la 5ª aumentada es la sensible natural → tónica = (raíz+9)%12
+            //   - 7ª disminuida:    la fundamental es la sensible natural  → tónica = (raíz+1)%12
             const origScaleEnh = (tonActual.mode === 'major')
                 ? intervalsMajor.map(n => (currentTonicPC + n) % 12)
                 : intervalsMinor.map(n => (currentTonicPC + n) % 12);
@@ -3408,6 +3412,14 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
                                     .filter(c => c !== currentTonicPC);
 
             if (candidatos.length === 0) continue;
+
+            // Calcular candidato prioritario según tipo de acorde
+            const rootPC_enh = res.rootPC !== undefined ? res.rootPC : -1;
+            const candPrioritario = (rootPC_enh >= 0)
+                ? (tipo === "Aumentado"
+                    ? (rootPC_enh + 9) % 12   // semitono sobre la 5ª aumentada
+                    : (rootPC_enh + 1) % 12)  // semitono sobre la fundamental (dim7)
+                : -1;
 
             const laheadEnh = Math.min(results.length, i + 6);
             let mejorCand = -1, mejorScore = 0;
@@ -3427,7 +3439,11 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
                         if ((scaleM.includes(p) || scalem.includes(p)) && !origScaleEnh.includes(p)) score++;
                     });
                 }
-                if (score > mejorScore) { mejorScore = score; mejorCand = cand; }
+                // En empate, el candidato prioritario (derivado de la raíz) tiene preferencia
+                const esPrioritario = (cand === candPrioritario);
+                if (score > mejorScore || (score === mejorScore && score > 0 && esPrioritario)) {
+                    mejorScore = score; mejorCand = cand;
+                }
             }
 
             if (mejorCand === -1 || mejorScore === 0) continue;
@@ -3646,20 +3662,29 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
                 }
 
 
-        // Falsa relación cromática: se comprueba siempre con el acorde inmediatamente anterior a la dominante
-                if (tipoMod === "Directa" && domStructural) {
-                    const acordeJustoAntes = structuralChords[`chord${i}`];
-                    ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
-                        const nA = acordeJustoAntes[v];
-                        const nD = domStructural[v];
-                        if (nA && nD && nA.baseName === nD.baseName && nA.realAcc !== nD.realAcc) {
-                            tipoMod = "Cromática";
-                        }
-                    });
-                }
-            }
-        }
+                // Falsa relación cromática: se comprueba ampliando el rango hacia atrás (zona de transición)
+                if (tipoMod === "Directa" || tipoMod === "Diatónica") {
 
+                    let inicioCromatismo = (idxPivot >= 0) ? idxPivot + 1 : Math.max(1, i - 1);
+                    
+                    for (let k = inicioCromatismo; k <= i + 1; k++) {
+                        const acordeActual = structuralChords[`chord${k}`];
+                        const acordeAnterior = structuralChords[`chord${k - 1}`];
+                        
+                        if (acordeActual && acordeAnterior) {
+                            ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
+                                const nAnt = acordeAnterior[v];
+                                const nAct = acordeActual[v];
+                                if (nAnt && nAct && nAnt.baseName === nAct.baseName && nAnt.realAcc !== nAct.realAcc) {
+                                    tipoMod = "Cromática";
+                                }
+                            });
+                        }
+                    }
+                }
+}
+}
+           
 
         // ── MODULACIÓN ENARMÓNICA ──────────────────────────────────────────────
         // Se activa cuando ninguno de los tests anteriores clasificó la modulación
@@ -3673,13 +3698,21 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         //
         // Test universal: el acorde modulante debe contener la nota (targetPC - 1)
         // que es la sensible de la nueva tonalidad.
-        // La modulación enarmónica tiene prioridad sobre la cromática:
-        // una Sexta aumentada alemana que resuelve enarmónicamente produce
-        // una falsa relación cromática en el bajo (p.ej. A→Ab) que el test
-        // anterior clasifica como "Cromática" de forma incorrecta.
+        // La modulación enarmónica tiene prioridad sobre la cromática SOLO para
+        // Sextas Aumentadas: su bajo desciende un semitono (p.ej. A→Ab), lo que
+        // genera una falsa relación cromática que el test anterior clasifica
+        // incorrectamente como "Cromática".
+        // Las tríadas aumentadas y 7ª disminuidas NO deben anular "Cromática":
+        // si ya se detectó movimiento cromático (Sol→Sol#), esa clasificación
+        // es la correcta y no debe sobrescribirse con "Enarmónica".
         if (tipoMod === "Directa" || tipoMod === "Cromática") {
-            const esEnharmonizable = tipo === "Aumentado"
-                || tipo.includes("Dism7dism") || tipo.includes("Disminuido 7")
+            const esEnharmonizable =
+                // Aumentado y Dism7 solo compiten si aún no hay clasificación cromática
+                (tipoMod === "Directa" && (
+                    tipo === "Aumentado"
+                    || tipo.includes("Dism7dism") || tipo.includes("Disminuido 7")
+                ))
+                // Las Sextas Aumentadas sí pueden anular "Cromática"
                 || tipo.includes("Sexta aumentada Alemana")
                 || tipo.includes("Sexta aumentada Suiza");
 
