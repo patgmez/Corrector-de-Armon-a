@@ -3292,7 +3292,7 @@ function checkHarmonicSyncopation(c1, c2, res1, res2, beat1, beat2, meter) {
     // Limpiamos el tipo para ignorar diferencias sutiles como "(omit 5)"
     const baseType = (t) => t ? t.split('(')[0].trim().replace(" (dominante)", "") : "";
     if (baseType(res1.tipo) !== baseType(res2.tipo)) return [];
-
+if (res2.estadoTexto && res2.estadoTexto.includes("2ª Inversión")) return [];
     // 2. Obtener peso métrico
     const w1 = getMetricWeight(beat1, meter);
     const w2 = getMetricWeight(beat2, meter);
