@@ -2235,7 +2235,8 @@ function checkDirectDissonance(c1, c2, res2) {
     
     const rootPC = res2.rootPC;
     const tipo = res2.tipo.toLowerCase();
-    const esDominante = tipo.includes("dominante") || res2.tipo.includes("M7m") || tipo === "7 (omit 5)" || tipo.includes("alemana");
+    const esDominante = tipo.includes("dominante") || tipo.includes("mayor con 7ª menor") || res2.tipo.includes("M7m") || tipo === "7 (omit 5)" || tipo.includes("alemana");
+
 
     forEachVoicePair((v1, v2) => {
         if (!c1[v1] || !c2[v1] || !c1[v2] || !c2[v2]) return;
@@ -4206,8 +4207,11 @@ const esPedal2 = nextRes.tipo === "Dominante sobre tónica";
 //    denunciará que el bajo se ha movido incorrectamente).
 
 const esMismo = (!currentRes.error && !nextRes.error && currentRes.rootPC === nextRes.rootPC && (
-    currentRes.tipo === nextRes.tipo || (!esPedal1 && esPedal2)
+    currentRes.tipo === nextRes.tipo || 
+    (currentRes.tipo === "Mayor" && nextRes.tipo === "Mayor con 7ª menor") ||
+    (!esPedal1 && esPedal2)
 ));
+
                 
                 if (!esMismo) {
                     errors.push(...checkFalseRelation(currentStructural, nextStructural, false).map(x => `${label}: ${x}`)); 
