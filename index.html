@@ -3535,21 +3535,74 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         let tipoMod = "Directa";
         let pivoteDesc = "";
 
-        // Buscar el verdadero acorde pivote (saltando los 6/4 cadenciales)
+                    // Buscar el verdadero acorde pivote ampliando la búsqueda hacia atrás
         let idxPivot = i - 1; 
+        let mejorPivote = -1;
 
-        if (idxPivot >= 0) {
-            // Retroceder si el acorde previo es la tónica de destino en 2ª inversión (6/4 cadencial)
+        while (idxPivot >= 0) {
+            const temp = results[idxPivot];
+            const tempChord = structuralChords[`chord${idxPivot + 1}`];
+            
+            if (!temp || temp.error || !tempChord) {
+                idxPivot--;
+                continue;
+            }
+
+            // Ignorar 6/4 cadenciales
+            if (temp.rootPC === targetPC && temp.estadoTexto && temp.estadoTexto.includes("2ª Inversión")) {
+                idxPivot--;
+                continue;
+            }
+
+            // Comprobar a qué tonalidad pertenecen las notas
+            const notas = [];
+            ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
+                if (tempChord[v] && tempChord[v].pitchClass !== undefined) {
+                    notas.push(parseInt(tempChord[v].pitchClass, 10));
+                }
+            });
+
+            if (notas.length === 0) {
+                idxPivot--;
+                continue;
+            }
+
+            const enVieja = notas.every(pc => oldScalePCs.includes(pc));
+            const enNueva = notas.every(pc => newScalePCs.includes(pc));
+
+            if (enVieja && enNueva) {
+                // Es común a ambas. Lo guardamos como candidato, pero seguimos retrocediendo.
+                mejorPivote = idxPivot;
+            } else if (enVieja && !enNueva) {
+                // Pertenece SOLO a la tonalidad antigua. Ya no podemos retroceder más.
+                break; 
+            }
+            // Si pertenece SOLO a la nueva (!enVieja && enNueva) o tiene notas extrañas, seguimos retrocediendo.
+            
+            idxPivot--; 
+        }
+
+        let pivoteRealEncontrado = false;
+        if (mejorPivote !== -1) {
+            idxPivot = mejorPivote;
+            pivoteRealEncontrado = true;
+        }
+
+        if (!pivoteRealEncontrado) {
+            // Fallback al comportamiento original si no encuentra pivote claro
+            idxPivot = i - 1;
             while (idxPivot >= 0) {
                 const temp = results[idxPivot];
-                if (temp && !temp.error && temp.rootPC === targetPC && 
-                    temp.estadoTexto && temp.estadoTexto.includes("2ª Inversión")) {
+                if (temp && !temp.error && temp.rootPC === targetPC && temp.estadoTexto && temp.estadoTexto.includes("2ª Inversión")) {
                     idxPivot--;
                 } else {
                     break;
                 }
             }
         }
+
+
+
 
         if (idxPivot >= 0) {
             const prevStructural = structuralChords[`chord${idxPivot + 1}`]; // Acorde pivote real
@@ -3655,14 +3708,22 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
             }
         }
 
- // Aplicamos la modulación
-        for (let j = i; j < results.length; j++) {
+         // Definir dónde empieza analíticamente la nueva tonalidad
+        let inicioNuevaTonalidad = i;
+        // Si hay pivote diatónico, la nueva tonalidad empieza justo después de él
+        if (tipoMod.includes("Diatónica") && idxPivot >= 0) {
+            inicioNuevaTonalidad = idxPivot + 1; 
+        }
+
+        // Aplicamos la modulación desde el nuevo punto
+        for (let j = inicioNuevaTonalidad; j < results.length; j++) {
             tonalidadLocal[j] = { tonic: newTonicEng, mode: newMode };
         }
         
         modulaciones.push({
             acordeD: i + 1,
             acordeT: i + 2,
+            acordeCambioVisual: inicioNuevaTonalidad + 1, // Guardamos el punto exacto de cambio
             tipo: tipoMod,
             desdeTonica: tonActual.tonic,
             desdeModo: tonActual.mode,
@@ -3671,6 +3732,7 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
             haciaEsp: targetEsp,
             pivoteDesc: pivoteDesc
         });
+
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -4471,13 +4533,15 @@ const cifrado = generarCifradoZamacois(
                 estadoHtml = ` (${estadoCorto})`;
             }
 
-            // --- BANNER DE MODULACIÓN: si este acorde inicia una nueva tonalidad ---
+                        // --- BANNER DE MODULACIÓN: si este acorde inicia una nueva tonalidad ---
             const tonAnterior = (i > 0) ? tonalidadLocal[i - 1] : null;
             const tonActual   = tonalidadLocal[i];
             const esNuevaTon  = tonAnterior &&
                 (tonAnterior.tonic !== tonActual.tonic || tonAnterior.mode !== tonActual.mode);
             if (esNuevaTon) {
-                const modInfo   = modulaciones.find(m => m.acordeD === i + 1);
+                // Buscamos la modulación por su punto de cambio visual (o por defecto, su dominante)
+                const modInfo   = modulaciones.find(m => (m.acordeCambioVisual || m.acordeD) === i + 1);
+
                 const lbl       = tonicLabels[tonActual.tonic] || tonActual.tonic;
                 const modoStr   = tonActual.mode === 'major' ? 'Mayor' : 'menor';
                 const colorMod  = !modInfo           ? '#94a3b8' :
@@ -5988,13 +6052,23 @@ if (tempoMatch) {
         }
     });
 
-    // 3. Parsear Notas (CORREGIDO)
+        // 3. Parsear Notas (CORREGIDO Y CON MEMORIA DE ALTERACIONES)
     const parseVoiceNotes = (str) => {
-        // CORRECCIÓN AQUÍ: ([,']*) en lugar de ([,']*?) para que capture TODAS las comas
-        const regex = /(".*?")?([_\^=]*)([a-gA-Gxz])([,']*)([\d\/]*)/g;
+        // Añadimos \| a la expresión regular para detectar barras de compás
+        const regex = /(".*?")?([_\^=]*)([a-gA-Gxz\|])([,']*)([\d\/]*)/g;
         const notes = [];
         let match;
+        let measureAccidentals = {}; // Guarda las alteraciones activas en el compás actual
+
         while ((match = regex.exec(str)) !== null) {
+            let noteChar = match[3];
+
+            // Si es barra de compás, limpiamos la memoria y continuamos
+            if (noteChar === '|') {
+                measureAccidentals = {};
+                continue;
+            }
+
             let dRaw = match[5];
             let dur = 1;
             if (dRaw) {
@@ -6006,16 +6080,34 @@ if (tempoMatch) {
                     dur = parseFloat(dRaw);
                 }
             }
+
+            let acc = match[2];
+            let isRest = (noteChar === 'x' || noteChar === 'z');
+
+            if (!isRest) {
+                // Identificador único de la nota en su octava exacta (ej. "C", "c'", "B,")
+                let noteId = noteChar + (match[4] || ""); 
+
+                if (acc !== "") {
+                    // Si el usuario escribe la alteración explícitamente, se guarda en memoria
+                    measureAccidentals[noteId] = acc;
+                } else if (measureAccidentals[noteId]) {
+                    // Si no la escribe, pero está activa en el compás, se recupera
+                    acc = measureAccidentals[noteId];
+                }
+            }
+
             notes.push({
                 ornament: match[1] || "",
-                acc: match[2],
-                note: match[3],
-                octMod: match[4], // Ahora capturará correctamente las comas ","
+                acc: acc,
+                note: noteChar,
+                octMod: match[4], 
                 dur: Math.ceil(dur)
             });
         }
         return notes;
     };
+
 
     const sNotes = parseVoiceNotes(voicesData[1]);
     const aNotes = parseVoiceNotes(voicesData[2]);
