@@ -1633,24 +1633,16 @@ function checkSeventhPreparation(c1, c2, res2, esFuncional) {
     if(!c1 || !c2 || !res2 || res2.error) return [];
     
     const tipo = res2.tipo || "", rootPC = res2.rootPC;
-    // Detectamos si tiene séptima física
-    const tieneSeptima = tipo.includes("7") || tipo.includes("Novena") || tipo.includes("M7") || tipo.includes("m7") || res2.esSeptimaSinQuinta;
+    
+    // Detectamos si tiene séptima física (incluyendo disminuidos)
+    const tieneSeptima = tipo.includes("7") || tipo.includes("Novena") || tipo.includes("M7") || tipo.includes("m7") || res2.esSeptimaSinQuinta || tipo.includes("Disminuido") || tipo.includes("Semidisminuido");
     
     if (!tieneSeptima) return [];
 
     const tLower = tipo.toLowerCase();
     
-    // DEFINICIÓN RIGUROSA DE "DOMINANTE" PARA LA REGLA DEL SALTO:
-    // 1. Si la etiqueta ya dice "Dominante" (V7 explícito).
-    // 2. Si es 6ª Aumentada (su "séptima" es estructuralmente especial).
-    // 3. Si es "Mayor con 7ª Menor" (o 7 omit 5) Y ADEMÁS funciona como tal (resuelve ascendiendo 4ª/descendiendo 5ª o por semitono).
-    
-    const esEstructuraMm7 = tipo.includes("Mayor con 7ª menor") || tipo.includes("M7m") || tipo === "7 (omit 5)";
-    
-    const tieneLicenciaDeSalto = 
-        tLower.includes("dominante") || 
-        tipo.includes("Aug6") || 
-        (esEstructuraMm7 && esFuncional); // AQUÍ ESTÁ LA CLAVE: Solo si es funcional
+    // Si el análisis ya determinó que es funcional (V o VII), tiene licencia
+    const tieneLicenciaDeSalto = tLower.includes("dominante") || tipo.includes("Aug6") || esFuncional;
 
     ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
         const note2 = c2[v], note1 = c1[v];
@@ -1664,15 +1656,11 @@ function checkSeventhPreparation(c1, c2, res2, esFuncional) {
             
             // Lógica de preparación
             if (tieneLicenciaDeSalto) {
-                // Si es dominante real, permitimos salto ascendente. 
-                // Solo avisamos si salta DESCENDIENDO hacia la 7ª (raro y duro).
                 if (v === 'bass' && diff > 2) {} 
                 else if (absDiff > 2 && diff < 0) {
                      warnings.push(`Séptima en ${vNames[v]}: Entra por salto descendente (en dominantes es preferible grado o salto ascendente).`);
                 }
             } else {
-                // REGLA ESTRICTA (Secundarias, IV7 melódico, etc.)
-                // Debe entrar por grado (diff <= 2) o nota común (diff == 0)
                 if (absDiff > 2) {
                     warnings.push(`Séptima en ${vNames[v]} entra por salto (al no tener función dominante, requiere preparación estricta).`);
                 }
@@ -1681,6 +1669,7 @@ function checkSeventhPreparation(c1, c2, res2, esFuncional) {
     });
     return warnings;
 }
+
 
 
 function checkSecondInversionRules(c0, c1, c2, res1, res2, esMismoAcorde, res0, localTonicStr, localModeStr) {
@@ -2229,14 +2218,15 @@ function checkOrnamentResolution(c1, c2) {
     return warnings;
 }
 
-function checkDirectDissonance(c1, c2, res2) {
+function checkDirectDissonance(c1, c2, res2, esFuncional) { // <-- Añadido esFuncional
     const warnings = [];
     if (!c1 || !c2 || !res2 || res2.error || !res2.tipo) return [];
     
     const rootPC = res2.rootPC;
     const tipo = res2.tipo.toLowerCase();
-    const esDominante = tipo.includes("dominante") || tipo.includes("mayor con 7ª menor") || res2.tipo.includes("M7m") || tipo === "7 (omit 5)" || tipo.includes("alemana");
-
+    
+    // <-- Añadido esFuncional a la validación
+    const esDominante = esFuncional || tipo.includes("dominante") || tipo.includes("mayor con 7ª menor") || res2.tipo.includes("m7m") || tipo === "7 (omit 5)" || tipo.includes("alemana");
 
     forEachVoicePair((v1, v2) => {
         if (!c1[v1] || !c2[v1] || !c1[v2] || !c2[v2]) return;
@@ -2343,7 +2333,7 @@ if (!localTonic || !localMode) return [];
         if (member && restrictedMembers.includes(member)) {
             const memName = (member === '3rd') ? "tercera" : "quinta";
             const estadoMsg = res2.estadoTexto.includes("Inversión") ? " (en inversión)" : "";
-            errors.push(`No es buena duplicación: Movimiento directo a la ${memName}${estadoMsg} en el grado ${cleanDeg} (${vNames[v1]}-${vNames[v2]}).`);
+            errors.push(`No es buena duplicación: Movimiento directo a la ${memName}${estadoMsg} en el grado ${cleanDeg} (${vNames[v1]}-${vNames[v2]}). Asegúrate de que el movimiento melódico lo justifique.`);
         }
     });
 
@@ -2934,71 +2924,59 @@ function identifyingChord(chordObj, notaBajoReferencia, checkPedal = true) {
 }
 
 function esDominanteFuncional(acordeActual, acordeSiguiente, resActual, resSiguiente) {
-    // Si no hay acorde siguiente, no podemos determinar función dominante
     if (!acordeSiguiente || !resSiguiente || resSiguiente.error) return false;
-    
-    // 1. VERIFICAR QUE ES UN ACORDE DE SÉPTIMA CON LOS INTERVALOS ADECUADOS
+
     const tipo = resActual.tipo || "";
-    const tieneIntervalosDominante = 
-        tipo.includes("M7m") || 
-        tipo.includes("Dominante") || 
-        tipo === "7 (omit 5)" ||
-        (tipo.includes("7") && !tipo.includes("M7") && !tipo.includes("m7")) ||
-        (resActual.esSeptimaSinQuinta && tipo.includes("Mayor"));
     
-    if (!tieneIntervalosDominante) return false;
-    
-    // 2. ENCONTRAR LA NOTA QUE HACE DE 3ª (SENSIBLE POTENCIAL)
+    // 1. Identificar si la estructura intrínseca es de tipo V o tipo VII
+    const esTipoV = tipo.includes("Mayor") || tipo.includes("Dominante") || tipo === "7 (omit 5)" || tipo.includes("Novena") || tipo.includes("M7m");
+    const esTipoVII = tipo.includes("Disminuido") || tipo.includes("Dism") || tipo.includes("Semidisminuido");
+
+    if (!esTipoV && !esTipoVII) return false;
+
+    // 2. Identificar la Sensible teórica y el objetivo esperado (Resolución)
     let sensiblePC = -1;
+    let targetEsperadoPC = -1;
+
+    if (esTipoV) {
+        sensiblePC = (resActual.rootPC + 4) % 12;   // La 3ª del acorde V
+        targetEsperadoPC = (resActual.rootPC + 5) % 12; // Resuelve a 4ª justa asc.
+    } else {
+        sensiblePC = resActual.rootPC;              // La fundamental del VII
+        targetEsperadoPC = (resActual.rootPC + 1) % 12; // Resuelve a 2ª menor asc.
+    }
+
+    // 3. Ubicar la sensible en las voces del acorde actual
     let vozSensible = null;
-    
-    // La sensible es la 3ª del acorde (intervalo de 4 semitonos respecto a la fundamental)
-    const terceraMayorPC = (resActual.rootPC + 4) % 12;
-    
-    // Buscar qué voz tiene esa nota
     ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
-        if (acordeActual[v] && acordeActual[v].pitchClass === terceraMayorPC) {
-            sensiblePC = terceraMayorPC;
+        if (acordeActual[v] && acordeActual[v].pitchClass === sensiblePC) {
             vozSensible = v;
         }
     });
-    
-    // Si no encontramos la 3ª, no podemos determinar (pero raro, debería estar)
-    if (sensiblePC === -1) return false;
-    
-    // 3. VER SI ESA NOTA (SENSIBLE) RESUELVE ASCENDIENDO
+
+    if (!vozSensible || !acordeSiguiente[vozSensible]) return false;
+
+    // 4. Analizar el movimiento físico de la sensible
     const notaSensible = acordeActual[vozSensible];
     const notaSiguiente = acordeSiguiente[vozSensible];
-    
-    if (!notaSiguiente) return false;
-    
     const movimiento = notaSiguiente.midi - notaSensible.midi;
-    const resuelveAscendente = (movimiento === 1 || movimiento === 2 || movimiento === -11);
     
-    // 4. DETECTAR CADENA DE DOMINANTES (7ª ↔ SENSIBLE)
-    let esCadenaDominantes = false;
+    const movAbs = Math.abs(movimiento);
+    // Regla 2: Asciende o desciende por semitono estricto (1 semitono o su equivalente en salto de octava)
+    const resuelvePorSemitono = (movAbs === 1 || movAbs === 11);
+
+    // Excepción Regla 2: Enlace con otro acorde de función dominante que vaya a la misma tónica (Cambio de posición)
+    const tipoSig = resSiguiente.tipo || "";
+    const sigEsTipoV = tipoSig.includes("Mayor") || tipoSig.includes("Dominante") || tipoSig === "7 (omit 5)" || tipoSig.includes("Novena") || tipoSig.includes("M7m");
+    const sigEsTipoVII = tipoSig.includes("Disminuido") || tipoSig.includes("Dism") || tipoSig.includes("Semidisminuido");
     
-    if (resSiguiente && !resSiguiente.error) {
-        // Buscar si la 7ª del acorde actual enlaza con la sensible del siguiente
-        const septimaPC = (resActual.rootPC + 10) % 12; // 7ª menor
-        
-        ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
-            if (acordeActual[v] && acordeActual[v].pitchClass === septimaPC) {
-                const terceraSigPC = (resSiguiente.rootPC + 4) % 12; // 3ª del siguiente
-                
-                if (acordeSiguiente[v] && acordeSiguiente[v].pitchClass === terceraSigPC) {
-                    const mov7 = acordeSiguiente[v].midi - acordeActual[v].midi;
-                    // La 7ª debe bajar a la sensible
-                    if (mov7 === -1 || mov7 === -2 || mov7 === 11) {
-                        esCadenaDominantes = true;
-                    }
-                }
-            }
-        });
-    }
-    
-    // 5. DECISIÓN FINAL
-    return resuelveAscendente || esCadenaDominantes;
+    let targetSigPC = -1;
+    if (sigEsTipoV) targetSigPC = (resSiguiente.rootPC + 5) % 12;
+    else if (sigEsTipoVII) targetSigPC = (resSiguiente.rootPC + 1) % 12;
+
+    const esCambioPosicionDominante = (targetEsperadoPC === targetSigPC);
+
+    return resuelvePorSemitono || esCambioPosicionDominante;
 }
 
 function adaptarAnalisisParaReglas(resNuevo, chordActual = null, chordSiguiente = null, resSiguiente = null, localTonicPC = null, localMode = null) {
@@ -3010,12 +2988,16 @@ function adaptarAnalisisParaReglas(resNuevo, chordActual = null, chordSiguiente 
     // DETECCIÓN DE DOMINANTE FUNCIONAL
     let esFuncional = false;
     
-    // 1. Si el tipo ya indica posible dominante (intervalos)
+        // 1. Si el tipo ya indica posible dominante (intervalos)
     const tieneIntervalosDominante = 
         t.includes("Mayor con 7ª menor") || 
         t === "7 (omit 5)" ||
         (t.includes("7") && !t.includes("M7") && !t.includes("m7") && !t.includes("Menor")) ||
-        (resNuevo.esSeptimaSinQuinta && t.includes("Mayor"));
+        (resNuevo.esSeptimaSinQuinta && t.includes("Mayor")) ||
+        t.includes("Disminuido") || 
+        t.includes("Dism") || 
+        t.includes("Semidisminuido");
+
     
     // 2. Si tiene los intervalos y tenemos contexto de enlace, evaluamos función
     if (tieneIntervalosDominante && chordActual && chordSiguiente && resSiguiente) {
@@ -4329,7 +4311,8 @@ errors.push(...parRes.errors.map(x => `${label}: ${x}`));
 infos.push(...parRes.infos.map(x => `${label}: ${x}`));
 
                     warnings.push(...checkDirectIntervals(currentStructural, nextStructural, parRes.badPairs, chordNum).map(x => `${label}: ${x}`));
-                    warnings.push(...checkDirectDissonance(currentStructural, nextStructural, nextRes).map(x => `${label}: ${x}`));
+                    warnings.push(...checkDirectDissonance(currentStructural, nextStructural, nextRes, nextAdapt.esDominanteFuncional).map(x => `${label}: ${x}`));
+
                     
                     const thirdRaw = (i < totalChords-2) ? parsed[`chord${chordNum+2}`] : null;
                     warnings.push(...checkMelodicIntervalsStrict(currentRaw, nextRaw, false, thirdRaw, chordNum+1).map(x => `${label}: ${x}`));
@@ -4515,11 +4498,12 @@ const nextChordData = (i < totalChords - 1) ? structuralChords[`chord${i+2}`] : 
             
 const cifrado = generarCifradoZamacois(
     currentChord, 
-    tEl.value, 
-    mEl.value, 
+    tonalidadLocal[i].tonic,
+    tonalidadLocal[i].mode,
     (i > 0) ? structuralChords[`chord${i}`] : null, 
     nextChordData
-);            
+);
+
 
 
             // Preparar textos visuales
@@ -5326,7 +5310,14 @@ const globalMeasureContext = buildGlobalMeasureContext();
                 }
 
                 let cifradoStr = "";
-                if (cipherMode === 'baroque') cifradoStr = generarCifradoZamacois(currentChordObj, tVal, mVal, prevChordObj, nextChordObj);
+if (cipherMode === 'baroque') {
+    // Usar la tonalidad local guardada previamente en globalTonalidadLocal
+    const tonLoc = (typeof globalTonalidadLocal !== 'undefined' && globalTonalidadLocal[i-1]) 
+                   ? globalTonalidadLocal[i-1] 
+                   : { tonic: tVal, mode: mVal };
+                   
+    cifradoStr = generarCifradoZamacois(currentChordObj, tonLoc.tonic, tonLoc.mode, prevChordObj, nextChordObj);
+} 
                 
 
                 if (cifradoStr && cifradoStr.trim() !== "") {
@@ -5742,55 +5733,64 @@ function generarCifradoZamacois(chord, tonicVal, modeVal, prevChord = null, next
     }
 
 
-           // Detección de Función Tonal
-        let isDominantFunction = false; 
-        let functionalSensible = -1; 
-        
-        // Se incluyen los nombres de los acordes de novena incompletos (sin 5ª)
-        const esAcordeTipoV = esDominante7 || (esNovena && (tipo.includes("Dominante") || tipo.includes("9 (omit 5)") || tipo.includes("7(b9)")));
+       // Detección de Función Tonal
+    let isDominantFunction = false; 
+    let functionalSensible = -1; 
+    
+    const tipoAcorde = res.tipo || "";
+    const esTipoV = tipoAcorde.includes("Mayor") || tipoAcorde.includes("Dominante") || tipoAcorde === "7 (omit 5)" || tipoAcorde.includes("Novena") || tipoAcorde.includes("M7m");
+    const esTipoVII = tipoAcorde.includes("Disminuido") || tipoAcorde.includes("Dism") || tipoAcorde.includes("Semidisminuido");
 
+    // Asignar la sensible según la estructura
+    if (esTipoV) {
+        functionalSensible = (res.rootPC + 4) % 12; 
+    } else if (esTipoVII) {
+        functionalSensible = res.rootPC; 
+    }
 
-        if (res.rootPC === globalDominantPC) {
-            isDominantFunction = true;
-            functionalSensible = globalSensiblePC;
-        } 
-        else if (res.rootPC === globalSensiblePC) {
-            isDominantFunction = true;
-            functionalSensible = globalSensiblePC;
-        }
-        else if (esAcordeTipoV) {
-            // Reconoce al instante cualquier V7 o V9 como dominante
-            isDominantFunction = true;
-            functionalSensible = (res.rootPC + 4) % 12;
-        }
-        else if (nextChord && res.rootPC !== -1) {
-            const resNext = identifyingChord(nextChord, nextChord.bass, true);
-            if (!resNext.error && resNext.rootPC !== -1) {
-                if (tipo.includes("Mayor") && res.rootPC === (resNext.rootPC + 7)%12) { 
-                     isDominantFunction = true;
-                     functionalSensible = (res.rootPC + 4) % 12;
-                }
-                if ((tipo.includes("Dism") || tipo.includes("Semidisminuido")) && res.rootPC === (resNext.rootPC + 11)%12) {
-                     isDominantFunction = true;
-                     functionalSensible = res.rootPC;
+    // Calcular PCs locales para validar si es la dominante principal de la tonalidad en curso
+    const localTonicPC = getTonicPC(tonicVal.replace(/[0-9]/g, ''));
+    const localDominantPC = (localTonicPC + 7) % 12;
+    const localSensiblePC = (localTonicPC + 11) % 12;
+
+    if (esTipoV && res.rootPC === localDominantPC) {
+        isDominantFunction = true;
+    } else if (esTipoVII && res.rootPC === localSensiblePC) {
+        isDominantFunction = true;
+    } 
+    // Si no es la principal, comprobar si actúa como dominante secundaria o modulante
+    else if ((esTipoV || esTipoVII) && nextChord && res.rootPC !== -1) {
+        const resNext = identifyingChord(nextChord, nextChord.bass, true);
+                if (!resNext.error && resNext.rootPC !== -1) {
+            const targetEsperado = esTipoV ? (res.rootPC + 5) % 12 : (res.rootPC + 1) % 12;
+            
+            // Excepción: Resolución a un acorde 6/4 cadencial (donde el bajo físico es el target esperado)
+            const esSextaCuartaCadencial = resNext.estadoTexto && resNext.estadoTexto.includes("2ª Inversión") && nextChord.bass.pitchClass === targetEsperado;
+            
+            if (resNext.rootPC === targetEsperado || esSextaCuartaCadencial) {
+                isDominantFunction = true;
+            } else {
+                // Comprobar si enlaza con otra dominante que va al mismo sitio
+                const tipoSig = resNext.tipo || "";
+
+                const sigEsTipoV = tipoSig.includes("Mayor") || tipoSig.includes("Dominante") || tipoSig === "7 (omit 5)" || tipoSig.includes("Novena") || tipoSig.includes("M7m");
+                const sigEsTipoVII = tipoSig.includes("Disminuido") || tipoSig.includes("Dism") || tipoSig.includes("Semidisminuido");
+                
+                let targetDelSiguiente = -1;
+                if (sigEsTipoV) targetDelSiguiente = (resNext.rootPC + 5) % 12;
+                else if (sigEsTipoVII) targetDelSiguiente = (resNext.rootPC + 1) % 12;
+                
+                if (targetEsperado === targetDelSiguiente) {
+                    isDominantFunction = true;
                 }
             }
         }
-
-            if (esPedalDominante) {
+    } else if (esPedalDominante) {
         isDominantFunction = true;
-        
-        // Distancia entre el bajo (tónica) y la fundamental del acorde superior
         const dist = (res.rootPC - bassNote.pitchClass + 12) % 12;
-        
-        if (dist === 11) {
-            // Si es un VII sobre tónica (ej. Si-Re-Fa sobre Do), la sensible es su propia fundamental.
-            functionalSensible = res.rootPC;
-        } else {
-            // Si es un V sobre tónica (ej. Sol-Si-Re sobre Do), la sensible es su tercera (+4).
-            functionalSensible = (res.rootPC + 4) % 12;
-        }
+        functionalSensible = (dist === 11) ? res.rootPC : (res.rootPC + 4) % 12;
     }
+
 
 
 
