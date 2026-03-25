@@ -3440,31 +3440,23 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
             if (targetPC === undefined) continue;
         }
 
-        if (targetPC === currentTonicPC) continue;
-              // ── NUEVO: Validar funcionalidad estricta de Tríadas Mayores ──
+                // ── NUEVO: Validar funcionalidad estricta de Tríadas Mayores ──
         if (tipo === "Mayor" || tipo === "Mayor (omit 5)") {
             const nextRes = results[i + 1];
             if (nextRes && !nextRes.error) {
-                const rotaPC = (targetPC + 9) % 12;  // Resolución a VI (Mayor)
-                const rotamPC = (targetPC + 8) % 12; // Resolución a VI (menor)
-                
+                const rotaPC = (targetPC + 9) % 12;  
+                const rotamPC = (targetPC + 8) % 12; 
                 const esResolucionDirecta = (nextRes.rootPC === targetPC);
                 const esResolucionRota = (nextRes.rootPC === rotaPC || nextRes.rootPC === rotamPC);
-                
-                // Si asume que es cadencia rota, el destino NO puede ser un acorde inestable
                 const esSiguienteInestable = nextRes.tipo.includes("Sexta") || nextRes.tipo.includes("7") || nextRes.tipo.includes("Dism") || nextRes.tipo.includes("Aumentado");
                 
                 if (!esResolucionDirecta && (!esResolucionRota || esSiguienteInestable)) {
-                    continue; // Falsa alarma: no resuelve funcionalmente
+                    continue; 
                 }
             }
         }
 
-        
-
-        let tieneNotaDiferencial = false;
-
-                // Excluimos la 7ª porque la sensible aparece en ambos modos (menor armónica)
+        // --- CÁLCULO DE MODO ANTES DE DESCARTAR POR IGUAL TÓNICA ---
         const majorDistPC = [4, 9].map(n => (targetPC + n) % 12);
         const minorDistPC = [3, 8].map(n => (targetPC + n) % 12);
         let votoMaj = 0, votoMin = 0;
@@ -3483,15 +3475,19 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         }
         
         let newMode = (votoMin > votoMaj) ? 'minor' : 'major';
-        
-        // Desempate lógico basado en el origen
         if (votoMin === votoMaj) {
             newMode = tonActual.mode; 
-        } 
-        // Detección de Cadencia de Picardía (Acaba en Mayor pero venimos de menor con poco margen)
-        else if (votoMaj > votoMin && tonActual.mode === 'minor' && (lookaheadMode - i) <= 3) {
+        } else if (votoMaj > votoMin && tonActual.mode === 'minor' && (lookaheadMode - i) <= 3) {
             newMode = 'minor';
         }
+
+        // CORRECCIÓN: Solo descartar si no hay cambio de tónica NI de modo
+        if (targetPC === currentTonicPC && newMode === tonActual.mode) {
+            continue;
+        }
+
+        let tieneNotaDiferencial = false;
+
 
         const newScalePCs = (newMode === 'major') ? intervalsMajor.map(n => (targetPC + n) % 12) : 
                                                     intervalsMinor.map(n => (targetPC + n) % 12);
@@ -3514,17 +3510,21 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
             });
         });
 
-        let esInflexion = !tieneNotaDiferencial;
+                let esInflexion = !tieneNotaDiferencial;
         const lookaheadLimit = Math.min(results.length, i + 6);
         
         for (let k = i + 2; k < lookaheadLimit; k++) {
             if (!results[k].error && results[k].rootPC === currentTonicPC) {
-                esInflexion = true;
-                break;
+                // Si la tónica objetivo es la misma (cambio de modo), encontrarla confirma el cambio, no lo anula.
+                if (targetPC !== currentTonicPC) {
+                    esInflexion = true;
+                    break;
+                }
             }
         }
 
         if (esInflexion) continue; 
+
 
                 const newTonicEng = pcToEnglishTonic(targetPC, newMode);
         if (!newTonicEng) continue;
@@ -3666,7 +3666,11 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
                 }
 }
 }
-           
+              if (targetPC === currentTonicPC && newMode !== tonActual.mode) {
+            tipoMod = "Cambio de Modo";
+            pivoteDesc = " — Transición al modo homónimo";
+        }
+     
 
         // ── MODULACIÓN ENARMÓNICA ──────────────────────────────────────────────
         // Se activa cuando ninguno de los tests anteriores clasificó la modulación
@@ -4188,10 +4192,16 @@ globalTonalidadLocal = tonalidadLocal;
                             }
                         }
 
-                        if (mixta) tipoSecuencia = "Mixta";
+                                                if (mixta) tipoSecuencia = "Mixta";
+
+                        // CORRECCIÓN: Filtrar falsas secuencias (2 acordes repetidos solo 1 vez)
+                        if (L === 2 && numRepeticiones === 1) {
+                            continue;
+                        }
 
                         const rango = `${i + 1}–${c}`;
                         infos.push(`🎼 <strong>Secuencia ${tipoSecuencia}</strong> (Acordes ${rango}): Modelo de ${L} acordes con ${numRepeticiones} repetición/es.`);
+
                         if (typeof visualSequences !== 'undefined') {
     // Marcar el modelo
     visualSequences.push({ start: i + 1, end: i + L, type: 'modelo' });
@@ -5812,9 +5822,14 @@ function generarCifradoZamacois(chord, tonicVal, modeVal, prevChord = null, next
         
         if (inv === 0 && rawNum === 2) rawNum = 9;
 
-        const sig = keySignatures[modeVal][cleanTonic] || {};
+                // El cifrado físico se calcula siempre respecto a la armadura global del pentagrama
+        const globalTonicDOM = document.getElementById('tonic').value;
+        const globalModeDOM = document.getElementById('mode').value;
+        const sig = keySignatures[globalModeDOM][globalTonicDOM] || {};
+        
         const expectedAcc = sig[note.baseName] || ""; 
         const realAcc = note.realAcc || (note.userAcc === 'n' ? '' : note.userAcc) || ""; 
+
         
         let prefix = "";
         
