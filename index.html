@@ -1242,15 +1242,30 @@ function selectCurrentNote() {
         }
     });
     
-    // Sincronización con piano (sin cambios)
+        // Sincronización con piano buscando nota previa si hay silencio
+    let targetMidi = null;
     const currentNote = getCombinedNote(activeVoice, activeChord);
+    
     if (currentNote) {
         const p = parseNoteForAnalysis(currentNote);
-        if (p && p.midi !== undefined) {
-            setTimeout(() => scrollToKey(p.midi), 10);
+        if (p && !isNaN(p.midi)) {
+            targetMidi = p.midi;
+        } else {
+            for (let i = activeChord - 1; i >= 1; i--) {
+                const prevP = parseNoteForAnalysis(getCombinedNote(activeVoice, i));
+                if (prevP && !isNaN(prevP.midi)) {
+                    targetMidi = prevP.midi;
+                    break;
+                }
+            }
         }
     }
+    
+    if (targetMidi !== null) {
+        setTimeout(() => scrollToKey(targetMidi), 10);
+    }
 }
+
 
 
 function generateInputs() {
@@ -1286,27 +1301,25 @@ function populateSelects(restore = {}) {
 
 function addNewChord() {
     totalChords++; 
-    chordDurations[totalChords] = 1;
+    // Copiamos la duración del acorde anterior en lugar de forzar un 1
+    chordDurations[totalChords] = chordDurations[totalChords - 1] || 1;
     saveState();
+    
     ['soprano','alto','tenor','bass'].forEach(v => {
-        const prevN = document.getElementById(`n-${v}${totalChords-1}`);
-        const prevO = document.getElementById(`o-${v}${totalChords-1}`);
-        // --- CORRECCIÓN: Capturamos la alteración anterior ---
-        const prevA = document.getElementById(`a-${v}${totalChords-1}`);
+        // Establecemos los valores en blanco para crear el silencio
+        setNoteData(v, totalChords, '', '', '');
         
-        setNoteData(
-            v, 
-            totalChords, 
-            prevN ? prevN.value : 'C', 
-            prevA ? prevA.value : '', // Aquí aplicamos la alteración copiada
-            prevO ? prevO.value : (v==='bass'?3:5)
-        );
+        // Nos aseguramos de que no esté activado el modo adorno en el nuevo silencio
+        const kEl = document.getElementById(`k-${v}${totalChords}`);
+        if(kEl) kEl.checked = false;
     });
+    
     activeChord = totalChords; 
     updateStatusDisplay(); 
     updateBarlineButton(); 
     renderScore();
 }
+
 
 
 function removeLastChord() { 
@@ -5540,12 +5553,27 @@ function syncSelection() {
     updateStatusDisplay();
     selectCurrentNote();
 
+        // Sincronización con piano buscando nota previa si hay silencio
+    let targetMidi = null;
     const currentNote = getCombinedNote(activeVoice, activeChord);
+    
     if (currentNote) {
         const p = parseNoteForAnalysis(currentNote);
-        if (p && p.midi !== undefined) {
-            setTimeout(() => scrollToKey(p.midi), 50);
+        if (p && !isNaN(p.midi)) {
+            targetMidi = p.midi;
+        } else {
+            for (let i = activeChord - 1; i >= 1; i--) {
+                const prevP = parseNoteForAnalysis(getCombinedNote(activeVoice, i));
+                if (prevP && !isNaN(prevP.midi)) {
+                    targetMidi = prevP.midi;
+                    break;
+                }
+            }
         }
+    }
+    
+    if (targetMidi !== null) {
+        setTimeout(() => scrollToKey(targetMidi), 50);
     }
 }
 
