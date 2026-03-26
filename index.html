@@ -4133,7 +4133,7 @@ globalTonalidadLocal = tonalidadLocal;
             // Cerrar racha al final del ejercicio
             if (runLen >= 3) marcarSerie(runStart, runStart + runLen - 1);
         })();
-                             // --- DETECCIÓN DE SECUENCIAS ARMÓNICAS (Modelos de 2 a 4 acordes) ---
+          // --- DETECCIÓN DE SECUENCIAS ARMÓNICAS (Modelos de 2 a 4 acordes) ---
         (function detectarSecuenciasArmonicas() {
             if (totalChords < 4) return;
 
@@ -4164,12 +4164,13 @@ globalTonalidadLocal = tonalidadLocal;
                     // Distancia de transposición del primer acorde del modelo a su repetición
                     const transpBase = (results[i+L].rootPC - results[i].rootPC + 12) % 12;
                     
-                    // CORRECCIÓN: La transposición debe ser estrictamente 0 para descartarla
+                    // La transposición debe ser estrictamente distinta de 0
                     if (transpBase === 0) continue; 
 
                     let coincide = true;
                     let esReal = true;
 
+                    // 1. Comprobación armónica (macroestructura)
                     for (let k = 0; k < L; k++) {
                         const r1 = results[i+k];
                         const r2 = results[i+L+k];
@@ -4181,6 +4182,26 @@ globalTonalidadLocal = tonalidadLocal;
                         }
                         if (getBaseType(r1.tipo) !== getBaseType(r2.tipo)) {
                             esReal = false;
+                        }
+                    }
+
+                    // 2. Comprobación melódica (Soprano debe mantener el contorno)
+                    if (coincide) {
+                        for (let k = 0; k < L - 1; k++) {
+                            const cMod1 = structuralChords[`chord${i + k + 1}`];
+                            const cMod2 = structuralChords[`chord${i + k + 2}`];
+                            const cRep1 = structuralChords[`chord${i + L + k + 1}`];
+                            const cRep2 = structuralChords[`chord${i + L + k + 2}`];
+
+                            if (cMod1 && cMod2 && cRep1 && cRep2 && 
+                                cMod1.soprano && cMod2.soprano && cRep1.soprano && cRep2.soprano) {
+                                const dirMod = Math.sign(cMod2.soprano.midi - cMod1.soprano.midi);
+                                const dirRep = Math.sign(cRep2.soprano.midi - cRep1.soprano.midi);
+                                if (dirMod !== dirRep) {
+                                    coincide = false;
+                                    break;
+                                }
+                            }
                         }
                     }
 
@@ -4210,6 +4231,26 @@ globalTonalidadLocal = tonalidadLocal;
                                 }
                             }
 
+                            // Comprobación melódica para repeticiones adicionales
+                            if (repValida) {
+                                for (let k = 0; k < L - 1; k++) {
+                                    const cMod1 = structuralChords[`chord${c - L + k + 1}`];
+                                    const cMod2 = structuralChords[`chord${c - L + k + 2}`];
+                                    const cNext1 = structuralChords[`chord${c + k + 1}`];
+                                    const cNext2 = structuralChords[`chord${c + k + 2}`];
+
+                                    if (cMod1 && cMod2 && cNext1 && cNext2 && 
+                                        cMod1.soprano && cMod2.soprano && cNext1.soprano && cNext2.soprano) {
+                                        const dirMod = Math.sign(cMod2.soprano.midi - cMod1.soprano.midi);
+                                        const dirNext = Math.sign(cNext2.soprano.midi - cNext1.soprano.midi);
+                                        if (dirMod !== dirNext) {
+                                            repValida = false;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
                             if (repValida) {
                                 if (esReal !== nextReal) mixta = true;
                                 numRepeticiones++;
@@ -4219,9 +4260,9 @@ globalTonalidadLocal = tonalidadLocal;
                             }
                         }
 
-                                                if (mixta) tipoSecuencia = "Mixta";
+                        if (mixta) tipoSecuencia = "Mixta";
 
-                        // CORRECCIÓN: Filtrar falsas secuencias (2 acordes repetidos solo 1 vez)
+                        // Filtrar falsas secuencias (2 acordes repetidos solo 1 vez)
                         if (L === 2 && numRepeticiones === 1) {
                             continue;
                         }
@@ -4230,22 +4271,19 @@ globalTonalidadLocal = tonalidadLocal;
                         infos.push(`🎼 <strong>Secuencia ${tipoSecuencia}</strong> (Acordes ${rango}): Modelo de ${L} acordes con ${numRepeticiones} repetición/es.`);
 
                         if (typeof visualSequences !== 'undefined') {
-    // Marcar el modelo
-    visualSequences.push({ start: i + 1, end: i + L, type: 'modelo' });
-    // Marcar cada repetición
-    for (let rep = 1; rep <= numRepeticiones; rep++) {
-        visualSequences.push({
-            start: i + rep * L + 1,
-            end:   i + (rep + 1) * L,
-            type:  'repeticion'
-        });
-    }
-}
-
+                            visualSequences.push({ start: i + 1, end: i + L, type: 'modelo' });
+                            for (let rep = 1; rep <= numRepeticiones; rep++) {
+                                visualSequences.push({
+                                    start: i + rep * L + 1,
+                                    end:   i + (rep + 1) * L,
+                                    type:  'repeticion'
+                                });
+                            }
+                        }
                         
-                        i = c; // Salta los acordes ya analizados dentro de esta secuencia
+                        i = c; 
                         secuenciaEncontrada = true;
-                        break; // Rompe el bucle for de L (ya encontró la secuencia más larga posible)
+                        break; 
                     }
                 }
 
