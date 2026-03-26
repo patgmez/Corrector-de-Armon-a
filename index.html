@@ -2353,13 +2353,27 @@ if (!localTonic || !localMode) return [];
     return errors;
 }
 
-function checkWeakUnisons(chord, num) {
+function checkWeakUnisons(chord, num, isLastChord, res, tonicPC) {
     const warnings = [];
     if (!chord) return [];
-    if (chord.soprano && chord.alto && chord.soprano.midi === chord.alto.midi) warnings.push(`Acorde ${num}: Unísono entre Soprano y Contralto (empobrece la sonoridad).`);
-    if (chord.alto && chord.tenor && chord.alto.midi === chord.tenor.midi) warnings.push(`Acorde ${num}: Unísono entre Contralto y Tenor (empobrece la sonoridad).`);
+
+    // Comprobamos si es el último acorde y si su fundamental es la tónica
+    const esTonicaFinal = isLastChord && res && res.rootPC === tonicPC;
+
+    if (chord.soprano && chord.alto && chord.soprano.midi === chord.alto.midi) {
+        // Excepción: perdonar si es el acorde final y el unísono es en la nota tónica
+        if (!(esTonicaFinal && chord.soprano.pitchClass === tonicPC)) {
+            warnings.push(`Acorde ${num}: Unísono entre Soprano y Contralto (empobrece la sonoridad).`);
+        }
+    }
+    if (chord.alto && chord.tenor && chord.alto.midi === chord.tenor.midi) {
+        if (!(esTonicaFinal && chord.alto.pitchClass === tonicPC)) {
+            warnings.push(`Acorde ${num}: Unísono entre Contralto y Tenor (empobrece la sonoridad).`);
+        }
+    }
     return warnings;
 }
+
 
 function checkStepwiseContraryMotion(c1, c2, res1, res2, analysis1, localTonic, localMode) {
     const warnings = [];
@@ -4264,7 +4278,10 @@ globalTonalidadLocal = tonalidadLocal;
 
 
             warnings.push(...checkVoiceCrossings(currentStructural, chordNum));
-            warnings.push(...checkWeakUnisons(currentStructural, chordNum));
+            const isLastChord = (chordNum === totalChords);
+const tonicPC = getTonicPC(localTonic);
+warnings.push(...checkWeakUnisons(currentStructural, chordNum, isLastChord, currentRes, tonicPC));
+
             errors.push(...checkChromaticClash(currentRaw, `Acorde ${chordNum}`));
         if (i < totalChords - 1) {
                 const nextRes = results[i+1];
