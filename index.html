@@ -4395,7 +4395,7 @@ infos.push(...parRes.infos.map(x => `${label}: ${x}`));
                     const thirdRaw = (i < totalChords-2) ? parsed[`chord${chordNum+2}`] : null;
                     warnings.push(...checkMelodicIntervalsStrict(currentRaw, nextRaw, false, thirdRaw, chordNum+1).map(x => `${label}: ${x}`));
                     warnings.push(...checkDirectDoublingRules(currentStructural, nextStructural, nextRes, nextAdapt, localTonic, localMode).map(x => `${label}: ${x}`));
-                    warnings.push(...checkStepwiseContraryMotion(currentStructural, nextStructural, currentRes, nextRes, currentAdapt, localTonic, localMode).map(x => `${label}: ${x}`));
+                   // warnings.push(...checkStepwiseContraryMotion(currentStructural, nextStructural, currentRes, nextRes, currentAdapt, localTonic, localMode).map(x => `${label}: ${x}`));
 
                     
                     // PASAMOS NEXTRES A checkDominantPedalResolution
