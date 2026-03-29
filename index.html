@@ -4097,6 +4097,8 @@ globalTonalidadLocal = tonalidadLocal;
                 if (d > 6) d = 12 - d;
                 return d <= 1; 
             };
+            // Para intervalos melódicos (no módulo 12): tolerancia ±1 semitono (variación diatónica)
+            const approxInterval = (a, b) => Math.abs(a - b) <= 1;
 
             let i = 0;
             while (i < totalChords - 3) {
@@ -4138,21 +4140,24 @@ globalTonalidadLocal = tonalidadLocal;
                         }
                     }
 
-                    // 2. Comprobación melódica (Soprano debe mantener el contorno)
+                    // 2. Comprobación melódica (todas las voces deben hacer el mismo intervalo ±1 st)
                     if (coincide) {
-                        for (let k = 0; k < L - 1; k++) {
+                        outer1: for (let k = 0; k < L - 1; k++) {
                             const cMod1 = structuralChords[`chord${i + k + 1}`];
                             const cMod2 = structuralChords[`chord${i + k + 2}`];
                             const cRep1 = structuralChords[`chord${i + L + k + 1}`];
                             const cRep2 = structuralChords[`chord${i + L + k + 2}`];
 
-                            if (cMod1 && cMod2 && cRep1 && cRep2 && 
-                                cMod1.soprano && cMod2.soprano && cRep1.soprano && cRep2.soprano) {
-                                const dirMod = Math.sign(cMod2.soprano.midi - cMod1.soprano.midi);
-                                const dirRep = Math.sign(cRep2.soprano.midi - cRep1.soprano.midi);
-                                if (dirMod !== dirRep) {
-                                    coincide = false;
-                                    break;
+                            if (cMod1 && cMod2 && cRep1 && cRep2) {
+                                for (const voz of ['soprano', 'alto', 'tenor', 'bass']) {
+                                    if (cMod1[voz] && cMod2[voz] && cRep1[voz] && cRep2[voz]) {
+                                        const intMod = cMod2[voz].midi - cMod1[voz].midi;
+                                        const intRep = cRep2[voz].midi - cRep1[voz].midi;
+                                        if (Math.sign(intMod) !== Math.sign(intRep) || !approxInterval(intMod, intRep)) {
+                                            coincide = false;
+                                            break outer1;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -4184,21 +4189,24 @@ globalTonalidadLocal = tonalidadLocal;
                                 }
                             }
 
-                            // Comprobación melódica para repeticiones adicionales
+                            // Comprobación melódica para repeticiones adicionales (todas las voces)
                             if (repValida) {
-                                for (let k = 0; k < L - 1; k++) {
+                                outer2: for (let k = 0; k < L - 1; k++) {
                                     const cMod1 = structuralChords[`chord${c - L + k + 1}`];
                                     const cMod2 = structuralChords[`chord${c - L + k + 2}`];
                                     const cNext1 = structuralChords[`chord${c + k + 1}`];
                                     const cNext2 = structuralChords[`chord${c + k + 2}`];
 
-                                    if (cMod1 && cMod2 && cNext1 && cNext2 && 
-                                        cMod1.soprano && cMod2.soprano && cNext1.soprano && cNext2.soprano) {
-                                        const dirMod = Math.sign(cMod2.soprano.midi - cMod1.soprano.midi);
-                                        const dirNext = Math.sign(cNext2.soprano.midi - cNext1.soprano.midi);
-                                        if (dirMod !== dirNext) {
-                                            repValida = false;
-                                            break;
+                                    if (cMod1 && cMod2 && cNext1 && cNext2) {
+                                        for (const voz of ['soprano', 'alto', 'tenor', 'bass']) {
+                                            if (cMod1[voz] && cMod2[voz] && cNext1[voz] && cNext2[voz]) {
+                                                const intMod = cMod2[voz].midi - cMod1[voz].midi;
+                                                const intNext = cNext2[voz].midi - cNext1[voz].midi;
+                                                if (Math.sign(intMod) !== Math.sign(intNext) || !approxInterval(intMod, intNext)) {
+                                                    repValida = false;
+                                                    break outer2;
+                                                }
+                                            }
                                         }
                                     }
                                 }
