@@ -3541,14 +3541,23 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         const lookaheadLimit = Math.min(results.length, i + 6);
         
         for (let k = i + 2; k < lookaheadLimit; k++) {
-            if (!results[k].error && results[k].rootPC === currentTonicPC) {
-                // Si la tónica objetivo es la misma (cambio de modo), encontrarla confirma el cambio, no lo anula.
-                if (targetPC !== currentTonicPC) {
-                    esInflexion = true;
-                    break;
-                }
+    if (!results[k].error && results[k].rootPC === currentTonicPC) {
+        if (targetPC !== currentTonicPC) {
+            // Verifica si el acorde es inestable (ej. tiene 7ª). Si es inestable,
+            // actúa como tensión en la nueva tonalidad, no como retorno a la antigua.
+            const tipoK = (results[k].tipo || "").toLowerCase();
+            const esInestable = tipoK.includes("7") || tipoK.includes("dominante") || 
+                                tipoK.includes("novena") || tipoK.includes("disminuido") || 
+                                tipoK.includes("aumentado") || tipoK.includes("semidisminuido");
+            
+            if (!esInestable) {
+                esInflexion = true;
+                break;
             }
         }
+    }
+}
+
 
         if (esInflexion) continue; 
 
@@ -3560,18 +3569,15 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         let tipoMod = "Directa";
         let pivoteDesc = "";
 
-                    // Buscar el verdadero acorde pivote ampliando la búsqueda hacia atrás
+                            // Buscar la región pivote ampliando la búsqueda hacia atrás
+        let acordesPivote = [];
         let idxPivot = i - 1; 
-        let mejorPivote = -1;
 
         while (idxPivot >= 0) {
             const temp = results[idxPivot];
             const tempChord = structuralChords[`chord${idxPivot + 1}`];
             
-            if (!temp || temp.error || !tempChord) {
-                idxPivot--;
-                continue;
-            }
+            if (!temp || temp.error || !tempChord) break;
 
             // Ignorar 6/4 cadenciales
             if (temp.rootPC === targetPC && temp.estadoTexto && temp.estadoTexto.includes("2ª Inversión")) {
@@ -3579,7 +3585,6 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
                 continue;
             }
 
-            // Comprobar a qué tonalidad pertenecen las notas
             const notas = [];
             ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
                 if (tempChord[v] && tempChord[v].pitchClass !== undefined) {
@@ -3587,88 +3592,36 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
                 }
             });
 
-            if (notas.length === 0) {
-                idxPivot--;
-                continue;
-            }
+            if (notas.length === 0) break;
 
             const enVieja = notas.every(pc => oldScalePCs.includes(pc));
             const enNueva = notas.every(pc => newScalePCs.includes(pc));
 
             if (enVieja && enNueva) {
-                // Es común a ambas. Lo guardamos como candidato, pero seguimos retrocediendo.
-                mejorPivote = idxPivot;
-            } else if (enVieja && !enNueva) {
-                // Pertenece SOLO a la tonalidad antigua. Ya no podemos retroceder más.
+                acordesPivote.unshift(idxPivot);
+            } else {
                 break; 
             }
-            // Si pertenece SOLO a la nueva (!enVieja && enNueva) o tiene notas extrañas, seguimos retrocediendo.
-            
             idxPivot--; 
         }
 
-        let pivoteRealEncontrado = false;
-        if (mejorPivote !== -1) {
-            idxPivot = mejorPivote;
-            pivoteRealEncontrado = true;
-        }
+        if (acordesPivote.length > 0) {
+            tipoMod = "Diatónica";
+            idxPivot = acordesPivote[0]; 
 
-        if (!pivoteRealEncontrado) {
-            // Fallback al comportamiento original si no encuentra pivote claro
-            idxPivot = i - 1;
-            while (idxPivot >= 0) {
-                const temp = results[idxPivot];
-                if (temp && !temp.error && temp.rootPC === targetPC && temp.estadoTexto && temp.estadoTexto.includes("2ª Inversión")) {
-                    idxPivot--;
-                } else {
-                    break;
-                }
+            if (acordesPivote.length === 1) {
+                pivoteDesc = ` — Acorde ${acordesPivote[0] + 1} actúa como pivote diatónico`;
+            } else {
+                pivoteDesc = ` — Acordes ${acordesPivote[0] + 1} al ${acordesPivote[acordesPivote.length - 1] + 1} actúan como región pivote diatónica`;
             }
+        } else {
+            idxPivot = i - 1; // Fallback
         }
-
-
-
 
         if (idxPivot >= 0) {
-            const prevStructural = structuralChords[`chord${idxPivot + 1}`]; // Acorde pivote real
-            const domStructural = structuralChords[`chord${i + 1}`];         // Acorde dominante (modulante)
-
+            const prevStructural = structuralChords[`chord${idxPivot + 1}`];
             if (prevStructural) {
-                const pcsA = [];
-                ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
-                    if (prevStructural[v] && prevStructural[v].pitchClass !== undefined) {
-                        pcsA.push(parseInt(prevStructural[v].pitchClass, 10));
-                    }
-                });
 
-                if (pcsA.length > 0) {
-                    // Si todas las notas del pivote están en la escala antigua Y en la nueva
-                    const enAmbas = pcsA.every(pc => oldScalePCs.includes(pc) && newScalePCs.includes(pc));
-                    if (enAmbas) {
-                        tipoMod = "Diatónica";
-                        let tonicalizado = false;
-
-                          // Comprobar si el pivote fue tonicalizado por su propia dominante
-                        if (idxPivot > 0) {
-                            const prePivotRes = results[idxPivot - 1]; // Acorde anterior al pivote
-                            const pivotRes = results[idxPivot];        // Acorde pivote
-
-                            if (prePivotRes && pivotRes && !prePivotRes.error && !pivotRes.error) {
-                                const targetEspPivot = mapDominantes[prePivotRes.fundamental];
-                                if (targetEspPivot && spanishToPC[targetEspPivot] === pivotRes.rootPC) {
-                                    tonicalizado = true;
-                                }
-                            }
-                        }
-
-                        if (tonicalizado) {
-                            tipoMod = "Diatónica (Pivote Tonicalizado)";
-                            pivoteDesc = ` — Acorde ${idxPivot + 1} es pivote, tonicalizado previamente por el Acorde ${idxPivot} (inflexión/escala melódica)`;
-                        } else {
-                            pivoteDesc = ` — Acorde ${idxPivot + 1} actúa como pivote diatónico`;
-                        }
-                    }
-                }
 
 
                 // Falsa relación cromática: se comprueba ampliando el rango hacia atrás (zona de transición)
