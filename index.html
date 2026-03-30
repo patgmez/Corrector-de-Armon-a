@@ -3483,8 +3483,19 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
                 const esResolucionDirecta = (nextRes.rootPC === targetPC);
                 const esResolucionRota = (nextRes.rootPC === rotaPC || nextRes.rootPC === rotamPC);
                 const esSiguienteInestable = nextRes.tipo.includes("Sexta") || nextRes.tipo.includes("7") || nextRes.tipo.includes("Dism") || nextRes.tipo.includes("Aumentado");
-                
-                if (!esResolucionDirecta && (!esResolucionRota || esSiguienteInestable)) {
+
+                // Excepción: V→VI donde VI es disminuido/inestable pero pertenece a la escala destino
+                // (ej. DoM→Re dism en el contexto de Fam con escala melódica) es una resolución válida.
+                const previewScalePCs = [
+                    ...intervalsMajor.map(n => (targetPC + n) % 12),
+                    ...intervalsMinor.map(n => (targetPC + n) % 12)
+                ];
+                const nextChordObj = structuralChords[`chord${i + 2}`];
+                const nextEnEscalaDestino = nextChordObj
+                    ? getChordPCsLocal(nextChordObj).every(pc => previewScalePCs.includes(pc))
+                    : false;
+
+                if (!esResolucionDirecta && (!esResolucionRota || (esSiguienteInestable && !nextEnEscalaDestino))) {
                     continue; 
                 }
             }
@@ -3622,7 +3633,25 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
                 pivoteDesc = ` — Acordes ${acordesPivote[0] + 1} al ${acordesPivote[acordesPivote.length - 1] + 1} actúan como región pivote diatónica`;
             }
         } else {
-            idxPivot = i - 1; // Fallback
+            // Comprobar si el propio acorde dominante actúa como pivote
+            // (ej. DoM = I en DoM y V en Fam → el mismo acorde pertenece a ambas escalas)
+            const selfChord = structuralChords[`chord${i + 1}`];
+            if (selfChord) {
+                const selfNotas = [];
+                ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
+                    if (selfChord[v] && selfChord[v].pitchClass !== undefined)
+                        selfNotas.push(parseInt(selfChord[v].pitchClass, 10));
+                });
+                if (selfNotas.length > 0
+                    && selfNotas.every(pc => oldScalePCs.includes(pc))
+                    && selfNotas.every(pc => newScalePCs.includes(pc))) {
+                    acordesPivote = [i];
+                    idxPivot = i;
+                    tipoMod = "Diatónica";
+                    pivoteDesc = ` — Acorde ${i + 1} actúa como pivote diatónico`;
+                }
+            }
+            if (acordesPivote.length === 0) idxPivot = i - 1; // Fallback
         }
 
         if (idxPivot >= 0) {
