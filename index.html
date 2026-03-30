@@ -3023,7 +3023,9 @@ function adaptarAnalisisParaReglas(resNuevo, chordActual = null, chordSiguiente 
         (resNuevo.esSeptimaSinQuinta && t.includes("Mayor")) ||
         t.includes("Disminuido") || 
         t.includes("Dism") || 
-        t.includes("Semidisminuido");
+        t.includes("Semidisminuido") ||(t.includes("9") && !t.includes("m9") && !t.includes("Maj9") && !t.includes("M9")) ||
+t.includes("Novena de Dominante")
+;
 
     
     // 2. Si tiene los intervalos y tenemos contexto de enlace, evaluamos función
@@ -3386,7 +3388,8 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
             tipo.includes("Sexta aumentada") || 
             (tipo.includes("Mayor") && !tipo.includes("M7M")) || 
             (tipo.includes("7") && !tipo.includes("Menor") && !tipo.includes("m7") && !tipo.includes("M7M")) ||
-            tipo === "Aumentado"
+            tipo === "Aumentado" || (tipo.includes("9") && !tipo.includes("m9") && !tipo.includes("Maj9") && !tipo.includes("M9")) ||
+tipo.includes("Novena de Dominante")
         );
 
 
@@ -3587,11 +3590,12 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         let tipoMod = "Directa";
         let pivoteDesc = "";
 
-                            // Buscar la región pivote ampliando la búsqueda hacia atrás
+                            // Buscar la región pivote permitiendo acordes de transición
         let acordesPivote = [];
         let idxPivot = i - 1; 
+        let limiteBusqueda = Math.max(0, i - 5); // Buscar hasta 5 acordes hacia atrás
 
-        while (idxPivot >= 0) {
+        while (idxPivot >= limiteBusqueda) {
             const temp = results[idxPivot];
             const tempChord = structuralChords[`chord${idxPivot + 1}`];
             
@@ -3616,9 +3620,15 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
             const enNueva = notas.every(pc => newScalePCs.includes(pc));
 
             if (enVieja && enNueva) {
+                // Es un acorde común a ambas tonalidades
                 acordesPivote.unshift(idxPivot);
+            } else if (!enVieja && enNueva) {
+                // Es un acorde propio de la nueva tonalidad.
+                // Si ya encontramos un pivote antes, paramos. Si no, seguimos buscando hacia atrás.
+                if (acordesPivote.length > 0) break;
             } else {
-                break; 
+                // Pertenece solo a la tonalidad vieja o a ninguna, se rompe el puente.
+                break;
             }
             idxPivot--; 
         }
@@ -5828,7 +5838,9 @@ function generarCifradoZamacois(chord, tonicVal, modeVal, prevChord = null, next
     let functionalSensible = -1; 
     
     const tipoAcorde = res.tipo || "";
-    const esTipoV = tipoAcorde.includes("Mayor") || tipoAcorde.includes("Dominante") || tipoAcorde === "7 (omit 5)" || tipoAcorde.includes("Novena") || tipoAcorde.includes("M7m");
+  const esTipoV = tipo.includes("Mayor") || tipo.includes("Dominante") || tipo === "7 (omit 5)" || 
+(tipo.includes("9") && !tipo.includes("m9") && !tipo.includes("Maj9") && !tipo.includes("M9")) || 
+tipo.includes("Novena de Dominante") || tipo.includes("M7m");
     const esTipoVII = tipoAcorde.includes("Disminuido") || tipoAcorde.includes("Dism") || tipoAcorde.includes("Semidisminuido");
 
     // Asignar la sensible según la estructura
