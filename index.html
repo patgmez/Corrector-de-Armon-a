@@ -3182,7 +3182,14 @@ function detectCadenceSequence(a1, a2, a3, r1, r2, r3, p1, p2, p3, mode, tonicPC
 
     if (mode === 'minor' && r1) {
         const bass1 = clean(a1.degree), bass2 = clean(a2.degree), bass3 = clean(a3.degree);
-        if (bass1 === "VII" && bass2 === "VI" && bass3 === "V") return finalize("Semicadencia Frigia");
+        if (bass1 === "VII" && bass2 === "VI" && bass3 === "V") {
+            // Solo es Semicadencia Frigia si es el BAJO quien desciende un semitono (VI→V)
+            const bassPC2 = p2.bass ? p2.bass.pitchClass : -1;
+            const bassPC3 = p3.bass ? p3.bass.pitchClass : -1;
+            const bajoBajaSemitono = (bassPC2 >= 0 && bassPC3 >= 0) &&
+                                     ((bassPC2 - bassPC3 + 12) % 12 === 1);
+            if (bajoBajaSemitono) return finalize("Semicadencia Frigia");
+        }
     }
 
     if (d3 === "I") {
