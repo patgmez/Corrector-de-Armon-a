@@ -1072,6 +1072,28 @@ let chordVisualMap = {};
 let isEarTrainingMode = false;
 let isGrouped = false;
 let chordDurations = {};
+
+// Convierte una duración numérica (múltiplo de 0.25) a su representación
+// en notación ABC (fracción irreducible). Ejemplos:
+//   1   → ""      (nota negra = unidad)
+//   0.5 → "/2"    (corchea)
+//   0.25→ "/4"    (semicorchea)
+//   1.5 → "3/2"   (negra con puntillo)
+//   2   → "2"     (blanca)
+//   3   → "3"     (blanca con puntillo)
+//   3.5 → "7/2"   (blanca con doble puntillo)
+//   4   → "4"     (redonda)
+function durToAbc(dur) {
+    const gcd = (a, b) => b === 0 ? a : gcd(b, a % b);
+    const num = Math.round(dur * 4);   // expresar en unidades de semicorchea
+    const den = 4;
+    const g = gcd(num, den);
+    const n = num / g;
+    const d = den / g;
+    if (d === 1) return n === 1 ? "" : String(n);
+    if (n === 1) return `/${d}`;
+    return `${n}/${d}`;
+}
 let cipherMode = 'none';
 let firstBarlineIndex = 0; 
 let totalChords = 1;
@@ -5343,16 +5365,7 @@ function renderScore() {
         beatsForMidi += (chordDurations[k]||1);
     }
 
-    const formatDuration = (dur) => {
-        if (dur === 1) return "";
-        if (dur === 0.5) return "/2";
-        if (dur === 0.25) return "/4";
-        if (dur === 1.5) return "3/2";
-        if (dur === 2) return "2";
-        if (dur === 3) return "3";
-        if (dur === 4) return "4";
-        return dur.toString();
-    };
+    const formatDuration = (dur) => durToAbc(dur);
 const globalMeasureContext = buildGlobalMeasureContext();
 
     const getAbcVoice = (vId) => {
@@ -5444,7 +5457,9 @@ const globalMeasureContext = buildGlobalMeasureContext();
                 }
 
                 let cifradoStr = "";
-if (cipherMode === 'baroque') {
+// No mostrar cifrado si alguna voz del acorde es nota de adorno
+const hasOrnamentNote = ['soprano', 'alto', 'tenor', 'bass'].some(v => currentChordObj[v] && currentChordObj[v].isOrnament);
+if (!hasOrnamentNote && cipherMode === 'baroque') {
     // Usar la tonalidad local guardada previamente en globalTonalidadLocal
     const tonLoc = (typeof globalTonalidadLocal !== 'undefined' && globalTonalidadLocal[i-1]) 
                    ? globalTonalidadLocal[i-1] 
@@ -7366,6 +7381,7 @@ K:${tVal}${mVal === 'minor' ? 'm' : ''}
 
             skipTo = nextI;
             let dur = mergedDur;
+            const durStr = durToAbc(dur);
 
             let annotations = ""; 
 
@@ -7403,7 +7419,9 @@ K:${tVal}${mVal === 'minor' ? 'm' : ''}
                 }
                 
                 let cifradoStr = "";
-                if (cipherMode === 'baroque') {
+                // No mostrar cifrado si alguna voz del acorde es nota de adorno
+                const hasOrnamentNote = ['soprano', 'alto', 'tenor', 'bass'].some(v => currentChordObj[v] && currentChordObj[v].isOrnament);
+                if (!hasOrnamentNote && cipherMode === 'baroque') {
                     cifradoStr = generarCifradoZamacois(currentChordObj, tVal, mVal, prevChordObj, nextChordObj);
                 } 
 
@@ -7417,7 +7435,7 @@ K:${tVal}${mVal === 'minor' ? 'm' : ''}
             // Si p es null O el nombre de la nota está vacío, es un silencio
             if (!p || p.baseName === "") {
                 // isOrnament en silencio = bandera de "silencio invisible (x)"
-                lineBuffer += ((p && p.isOrnament) ? "x" : "z") + dur;
+                lineBuffer += ((p && p.isOrnament) ? "x" : "z") + durStr;
             } else {
                 let prefix = (p.isOrnament) ? ((vId === 1 || vId === 3) ? '"^X"' : '"_X"') : "";
                                 let acc = "";
@@ -7471,7 +7489,7 @@ K:${tVal}${mVal === 'minor' ? 'm' : ''}
                 else if (p.octave === 3) abcNote = n + ",";
                 else if (p.octave === 2) abcNote = n + ",,";
                 
-                lineBuffer += annotations + prefix + acc + abcNote + dur + (addTie ? "-" : "");
+                lineBuffer += annotations + prefix + acc + abcNote + durStr + (addTie ? "-" : "");
 
             }
 
