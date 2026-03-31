@@ -2956,7 +2956,7 @@ function esDominanteFuncional(acordeActual, acordeSiguiente, resActual, resSigui
     const tipo = resActual.tipo || "";
     
     // 1. Identificar si la estructura intrínseca es de tipo V o tipo VII
-    const esTipoV = tipo.includes("Mayor") || tipo.includes("Dominante") || tipo === "7 (omit 5)" || tipo.includes("Novena") || tipo.includes("M7m");
+    const esTipoV = tipo.includes("Mayor") || tipo.includes("Dominante") || tipo === "7 (omit 5)" || tipo.includes("Novena") || tipo.includes("9") || tipo.includes("M7m");   
     const esTipoVII = tipo.includes("Disminuido") || tipo.includes("Dism") || tipo.includes("Semidisminuido");
 
     if (!esTipoV && !esTipoVII) return false;
@@ -3182,14 +3182,17 @@ function detectCadenceSequence(a1, a2, a3, r1, r2, r3, p1, p2, p3, mode, tonicPC
     if (d3 === "I" && r3.estadoTexto.includes("2ª Inversión")) 
         return finalize("¡No es cadencia! El I en 6/4 es inestable.");
 
-    if (mode === 'minor' && r1) {
-        const bass1 = clean(a1.degree), bass2 = clean(a2.degree), bass3 = clean(a3.degree);
-        if (bass1 === "VII" && bass2 === "VI" && bass3 === "V") {
-            // Solo es Semicadencia Frigia si es el BAJO quien desciende un semitono (VI→V)
+    if (mode === 'minor' && r2 && r3) {
+        const d2 = clean(a2.degree);
+        
+        // Semicadencia frigia: el acorde previo suele ser IV o VI, y el bajo debe descender un semitono hacia el V.
+        if ((d2 === "IV" || d2 === "VI") && d3 === "V") {
             const bassPC2 = p2.bass ? p2.bass.pitchClass : -1;
             const bassPC3 = p3.bass ? p3.bass.pitchClass : -1;
+            
             const bajoBajaSemitono = (bassPC2 >= 0 && bassPC3 >= 0) &&
                                      ((bassPC2 - bassPC3 + 12) % 12 === 1);
+                                     
             if (bajoBajaSemitono) return finalize("Semicadencia Frigia");
         }
     }
@@ -3529,9 +3532,23 @@ tipo.includes("Novena de Dominante")
             newMode = 'minor';
         }
 
-        // CORRECCIÓN: Solo descartar si no hay cambio de tónica NI de modo
-        if (targetPC === currentTonicPC && newMode === tonActual.mode) {
-            continue;
+// CORRECCIÓN: Evitar falsas modulaciones por cambio de modo (ej. Sextas aumentadas o V9/IV)
+        if (targetPC === currentTonicPC) {
+            if (newMode === tonActual.mode) {
+                continue;
+            } else if (newMode === 'minor' && tonActual.mode === 'major') {
+                // Para confirmar cambio a menor, la tónica DEBE aparecer luego como acorde menor.
+                // Si no, son solo préstamos (mixtura modal) o predominantes.
+                let confirmaMenor = false;
+                for (let k = i + 1; k < Math.min(results.length, i + 6); k++) {
+                    const resFuturo = results[k];
+                    if (!resFuturo.error && resFuturo.rootPC === currentTonicPC && resFuturo.tipo.includes("Menor")) {
+                        confirmaMenor = true;
+                        break;
+                    }
+                }
+                if (!confirmaMenor) continue; // Si no hay tónica menor, cancela la modulación
+            }
         }
 
         let tieneNotaDiferencial = false;
@@ -4013,6 +4030,33 @@ for(let i=0; i<totalChords; i++) {
 );
 globalTonalidadLocal = tonalidadLocal;
 
+        // --- DETECCIÓN DE MIXTURA MODAL ---
+        const minorOnlyIntervals = [3, 8, 10]; // b3, b6, b7
+        const mixturaModal = new Array(totalChords).fill(false);
+        for (let i = 0; i < totalChords; i++) {
+            const ton = tonalidadLocal[i];
+            if (ton.mode !== 'major') continue;
+            if (results[i].error || results[i].insuficiente) continue;
+
+            // EXCEPCIÓN: No etiquetar como mixtura modal las sextas aumentadas 
+            // ni las dominantes secundarias para evitar solapamiento de funciones.
+            const tipo = results[i].tipo || "";
+            if (tipo.includes("Sexta aumentada")) continue;
+            
+            if (adaptations[i] && adaptations[i].esDominanteFuncional) {
+                const tonicPCmix = getTonicPC(ton.tonic);
+                const primaryDominantPC = (tonicPCmix + 7) % 12;
+                // Si actúa como dominante pero no es la dominante de la tonalidad actual (V), es secundaria.
+                if (results[i].rootPC !== primaryDominantPC) continue;
+            }
+
+            const tonicPCmix = getTonicPC(ton.tonic); const minorOnlyPCs = minorOnlyIntervals.map(n => (tonicPCmix + n) % 12);
+            const chordObjMix = structuralChords[`chord${i+1}`];
+            mixturaModal[i] = ['soprano', 'alto', 'tenor', 'bass'].some(v => {
+                const n = chordObjMix[v];
+                return n && n.pitchClass !== undefined && minorOnlyPCs.includes(parseInt(n.pitchClass, 10));
+            });
+        }
 
         // --- TERCERA PASADA: recalcular grados con tonalidad local ---
         for (let i = 0; i < totalChords; i++) {
@@ -4635,6 +4679,11 @@ const cifrado = generarCifradoZamacois(
                 estadoHtml = ` (${estadoCorto})`;
             }
 
+            // Insignia de mixtura modal
+            const mixturaBadge = mixturaModal[i]
+                ? `<span title="Acorde prestado del modo menor homónimo (mixtura modal)" style="background:rgba(168,85,247,0.18); color:#c084fc; border:1px solid #a855f7; border-radius:4px; padding:1px 6px; font-size:0.78em; margin-left:6px; font-weight:bold; cursor:default;">mixtura modal</span>`
+                : "";
+
                         // --- BANNER DE MODULACIÓN: si este acorde inicia una nueva tonalidad ---
             const tonAnterior = (i > 0) ? tonalidadLocal[i - 1] : null;
             const tonActual   = tonalidadLocal[i];
@@ -4667,7 +4716,7 @@ const cifrado = generarCifradoZamacois(
                 <span>🎵</span>
                 <div>
                     <strong>Acorde ${i+1}:</strong> 
-                    ${gradoStr}${r.fundamental} ${tipoCorto}${infoDominante}${estadoHtml}${tonLabel}${badgeSilencios}
+                    ${gradoStr}${r.fundamental} ${tipoCorto}${infoDominante}${estadoHtml}${mixturaBadge}${tonLabel}${badgeSilencios}
                     <span style="display:inline-block; margin-left:8px; padding:2px 6px; background:#475569; border-radius:4px; color:#fcd34d; font-family:monospace; font-weight:bold;">
                         ${cifrado}
                     </span>
@@ -8465,6 +8514,10 @@ function toggleAgrupar() {
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <div style="width: 14px; height: 14px; border: 2px solid #3b82f6;"></div>
                             <span><strong>Caja azul:</strong> Nota fuera de tesitura</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="background:rgba(168,85,247,0.18); color:#c084fc; border:1px solid #a855f7; border-radius:4px; padding:1px 6px; font-size:0.85em; font-weight:bold;">mixtura modal</span>
+                            <span><strong>Insignia morada:</strong> Acorde prestado del modo menor homónimo</span>
                         </div>
                     </div>
                 </div>
