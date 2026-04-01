@@ -698,7 +698,7 @@
         </div>
 
         <button class="chord-manage-btn" onclick="removeLastChord()" title="Quitar último acorde">Quitar</button>
-        <button class="chord-manage-btn" onclick="addNewChord()" title="Añadir acorde">Añadir</button>
+        <button class="chord-manage-btn" onclick="insertChordAfterActive()" title="Añadir acorde">Añadir</button>
         
     </div>
 </div>
@@ -1072,28 +1072,6 @@ let chordVisualMap = {};
 let isEarTrainingMode = false;
 let isGrouped = false;
 let chordDurations = {};
-
-// Convierte una duración numérica (múltiplo de 0.25) a su representación
-// en notación ABC (fracción irreducible). Ejemplos:
-//   1   → ""      (nota negra = unidad)
-//   0.5 → "/2"    (corchea)
-//   0.25→ "/4"    (semicorchea)
-//   1.5 → "3/2"   (negra con puntillo)
-//   2   → "2"     (blanca)
-//   3   → "3"     (blanca con puntillo)
-//   3.5 → "7/2"   (blanca con doble puntillo)
-//   4   → "4"     (redonda)
-function durToAbc(dur) {
-    const gcd = (a, b) => b === 0 ? a : gcd(b, a % b);
-    const num = Math.round(dur * 4);   // expresar en unidades de semicorchea
-    const den = 4;
-    const g = gcd(num, den);
-    const n = num / g;
-    const d = den / g;
-    if (d === 1) return n === 1 ? "" : String(n);
-    if (n === 1) return `/${d}`;
-    return `${n}/${d}`;
-}
 let cipherMode = 'none';
 let firstBarlineIndex = 0; 
 let totalChords = 1;
@@ -1343,6 +1321,54 @@ function addNewChord() {
 }
 
 
+
+function insertChordAfterActive() {
+    // Si ya estamos en el último acorde, comportamiento original (añadir al final)
+    if (activeChord >= totalChords) {
+        addNewChord();
+        return;
+    }
+
+    const insertAt = activeChord + 1; // posición donde irá el nuevo silencio
+
+    // 1. Incrementar el total y regenerar el DOM (el nuevo slot al final queda vacío)
+    totalChords++;
+    generateInputs();
+
+    // 2. Desplazar datos de abajo hacia arriba: de totalChords−1 hasta insertAt+1
+    for (let i = totalChords; i > insertAt; i--) {
+        const src = i - 1;
+        ['soprano','alto','tenor','bass'].forEach(v => {
+            ['n','a','o'].forEach(prefix => {
+                const destEl = document.getElementById(`${prefix}-${v}${i}`);
+                const srcEl  = document.getElementById(`${prefix}-${v}${src}`);
+                if (destEl && srcEl) destEl.value = srcEl.value;
+            });
+            const destK = document.getElementById(`k-${v}${i}`);
+            const srcK  = document.getElementById(`k-${v}${src}`);
+            if (destK && srcK) destK.checked = srcK.checked;
+        });
+        chordDurations[i] = chordDurations[i - 1];
+    }
+
+    // 3. Limpiar la posición de inserción (nuevo silencio)
+    ['soprano','alto','tenor','bass'].forEach(v => {
+        setNoteData(v, insertAt, '', '', '');
+        const kEl = document.getElementById(`k-${v}${insertAt}`);
+        if (kEl) kEl.checked = false;
+    });
+    chordDurations[insertAt] = chordDurations[activeChord] || 1;
+
+    // 4. Ajustar firstBarlineIndex si cae después del punto de inserción
+    if (firstBarlineIndex > activeChord) firstBarlineIndex++;
+
+    // 5. Mover la selección al nuevo silencio y actualizar
+    activeChord = insertAt;
+    updateStatusDisplay();
+    updateBarlineButton();
+    saveState();
+    renderScore();
+}
 
 function removeLastChord() { 
     if(totalChords>1) { 
@@ -5365,7 +5391,16 @@ function renderScore() {
         beatsForMidi += (chordDurations[k]||1);
     }
 
-    const formatDuration = (dur) => durToAbc(dur);
+    const formatDuration = (dur) => {
+        if (dur === 1) return "";
+        if (dur === 0.5) return "/2";
+        if (dur === 0.25) return "/4";
+        if (dur === 1.5) return "3/2";
+        if (dur === 2) return "2";
+        if (dur === 3) return "3";
+        if (dur === 4) return "4";
+        return dur.toString();
+    };
 const globalMeasureContext = buildGlobalMeasureContext();
 
     const getAbcVoice = (vId) => {
@@ -5457,9 +5492,7 @@ const globalMeasureContext = buildGlobalMeasureContext();
                 }
 
                 let cifradoStr = "";
-// No mostrar cifrado si alguna voz del acorde es nota de adorno
-const hasOrnamentNote = ['soprano', 'alto', 'tenor', 'bass'].some(v => currentChordObj[v] && currentChordObj[v].isOrnament);
-if (!hasOrnamentNote && cipherMode === 'baroque') {
+if (cipherMode === 'baroque') {
     // Usar la tonalidad local guardada previamente en globalTonalidadLocal
     const tonLoc = (typeof globalTonalidadLocal !== 'undefined' && globalTonalidadLocal[i-1]) 
                    ? globalTonalidadLocal[i-1] 
@@ -7381,7 +7414,6 @@ K:${tVal}${mVal === 'minor' ? 'm' : ''}
 
             skipTo = nextI;
             let dur = mergedDur;
-            const durStr = durToAbc(dur);
 
             let annotations = ""; 
 
@@ -7419,9 +7451,7 @@ K:${tVal}${mVal === 'minor' ? 'm' : ''}
                 }
                 
                 let cifradoStr = "";
-                // No mostrar cifrado si alguna voz del acorde es nota de adorno
-                const hasOrnamentNote = ['soprano', 'alto', 'tenor', 'bass'].some(v => currentChordObj[v] && currentChordObj[v].isOrnament);
-                if (!hasOrnamentNote && cipherMode === 'baroque') {
+                if (cipherMode === 'baroque') {
                     cifradoStr = generarCifradoZamacois(currentChordObj, tVal, mVal, prevChordObj, nextChordObj);
                 } 
 
@@ -7435,7 +7465,7 @@ K:${tVal}${mVal === 'minor' ? 'm' : ''}
             // Si p es null O el nombre de la nota está vacío, es un silencio
             if (!p || p.baseName === "") {
                 // isOrnament en silencio = bandera de "silencio invisible (x)"
-                lineBuffer += ((p && p.isOrnament) ? "x" : "z") + durStr;
+                lineBuffer += ((p && p.isOrnament) ? "x" : "z") + dur;
             } else {
                 let prefix = (p.isOrnament) ? ((vId === 1 || vId === 3) ? '"^X"' : '"_X"') : "";
                                 let acc = "";
@@ -7489,7 +7519,7 @@ K:${tVal}${mVal === 'minor' ? 'm' : ''}
                 else if (p.octave === 3) abcNote = n + ",";
                 else if (p.octave === 2) abcNote = n + ",,";
                 
-                lineBuffer += annotations + prefix + acc + abcNote + durStr + (addTie ? "-" : "");
+                lineBuffer += annotations + prefix + acc + abcNote + dur + (addTie ? "-" : "");
 
             }
 
