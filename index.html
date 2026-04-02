@@ -3431,7 +3431,10 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
     };
 
     const intervalsMajor = [0, 2, 4, 5, 7, 9, 11];
-    const intervalsMinor = [0, 2, 3, 5, 7, 8, 10, 11];
+    // Escala menor combinada: natural (0,2,3,5,7,8,10) + sensible armónica (11) + 6ª melódica (9)
+    // El intervalo 9 (6ª mayor) cubre la escala melódica ascendente (ej. Re natural en Fa menor).
+    // Sin él, el buscador de pivotes rompe prematuramente al encontrar ese grado.
+    const intervalsMinor = [0, 2, 3, 5, 7, 8, 9, 10, 11];
 
     function pcToEnglishTonic(pc, preferMode) {
         const lista = (preferMode === 'minor') ? validTonics.minor : validTonics.major;
