@@ -597,6 +597,10 @@
     </select>
 </div>
 <hr style="border:0; border-top:1px solid #475569; margin:5px 0;">
+<div class="dropdown-item" onclick="marcarFinFraseo()">
+    <span style="margin-right:8px; font-weight:bold;">( )</span>
+    Señalar fin fraseo
+</div>
 
 <div class="dropdown-item" onclick="toggleOrnamentMode()">
     <span style="margin-right:8px;">✨</span>
@@ -876,6 +880,7 @@ const state = {
     mode: document.getElementById('mode').value, 
     meter: currentMeter,
     firstBarlineIndex: firstBarlineIndex,
+    phraseSlurs: phraseSlurs.slice(),
     durations: {...chordDurations},
     isGrouped: typeof isGrouped !== 'undefined' ? isGrouped : false, // Añadir esta línea
     inputs: {} 
@@ -1068,6 +1073,7 @@ let visualCrossings = []; // Cruzamientos de voces
 let visualLeadingTone = [];
 let visualTessitura = [];
 let visualSequences = [];
+let phraseSlurs = [];     // [{start: chordIdx1based, end: chordIdx1based}] — ligaduras de fraseo
 let chordVisualMap = {};
 let isEarTrainingMode = false;
 let isGrouped = false;
@@ -1396,6 +1402,7 @@ function resetScore() {
     setNoteData('tenor','1','G','',4); 
     setNoteData('bass','1','C','',3);
     firstBarlineIndex = 0;
+    phraseSlurs = [];
 updateBarlineButton();
     while(historyStack.length > 0) historyStack.pop(); 
     historyIndex = -1; 
@@ -1413,6 +1420,7 @@ function saveState() {
         mode: document.getElementById('mode').value, 
         meter: currentMeter,
         firstBarlineIndex: firstBarlineIndex,
+        phraseSlurs: phraseSlurs.slice(),
         durations: {...chordDurations},
         isGrouped: typeof isGrouped !== 'undefined' ? isGrouped : false, // <--- AÑADE ESTA LÍNEA
         inputs: {} 
@@ -1457,6 +1465,7 @@ for(let i=1; i<=totalChords; i++) {
     }
     updateTonalityInfo(); 
     firstBarlineIndex = s.firstBarlineIndex || 0;
+    phraseSlurs = (s.phraseSlurs && Array.isArray(s.phraseSlurs)) ? s.phraseSlurs : [];
 updateBarlineButton();
 if (s.isGrouped !== undefined && s.isGrouped !== isGrouped) {
     toggleAgrupar(); // Restaura el estado visual y del botón
@@ -3021,24 +3030,24 @@ function esDominanteFuncional(acordeActual, acordeSiguiente, resActual, resSigui
         targetEsperadoPC = (resActual.rootPC + 1) % 12; // Resuelve a 2ª menor asc.
     }
 
-    // 3. Ubicar la sensible en las voces del acorde actual
-    let vozSensible = null;
-    ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
-        if (acordeActual[v] && acordeActual[v].pitchClass === sensiblePC) {
-            vozSensible = v;
-        }
-    });
+    // Agrupar todas las voces que tengan la sensible
+let vocesSensible = [];
+['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
+    if (acordeActual[v] && acordeActual[v].pitchClass === sensiblePC) {
+        vocesSensible.push(v);
+    }
+});
 
-    if (!vozSensible || !acordeSiguiente[vozSensible]) return false;
+if (vocesSensible.length === 0) return false;
 
-    // 4. Analizar el movimiento físico de la sensible
-    const notaSensible = acordeActual[vozSensible];
-    const notaSiguiente = acordeSiguiente[vozSensible];
-    const movimiento = notaSiguiente.midi - notaSensible.midi;
-    
-    const movAbs = Math.abs(movimiento);
-    // Regla 2: Asciende o desciende por semitono estricto (1 semitono o su equivalente en salto de octava)
-    const resuelvePorSemitono = (movAbs === 1 || movAbs === 11);
+// Comprobar si al menos una de esas voces resuelve correctamente
+const resuelvePorSemitono = vocesSensible.some(v => {
+    if (!acordeSiguiente[v]) return false; // Si esta voz se silencia, se ignora
+    const movAbs = Math.abs(acordeSiguiente[v].midi - acordeActual[v].midi);
+    return movAbs === 1 || movAbs === 11;
+});
+
+
 
     // Excepción Regla 2: Enlace con otro acorde de función dominante que vaya a la misma tónica (Cambio de posición)
     const tipoSig = resSiguiente.tipo || "";
@@ -3202,11 +3211,22 @@ function detectCadenceSequence(a1, a2, a3, r1, r2, r3, p1, p2, p3, mode, tonicPC
         }
     }
 
-        // --- ANÁLISIS ESTÁNDAR ---
-    const clean = (deg) => deg ? deg.replace(/[#b]/g, '') : "";
+       // --- ANÁLISIS ESTÁNDAR ---
+    // Forzamos mayúsculas y quitamos paréntesis para comparar correctamente
+    const clean = (deg) => deg ? deg.replace(/[#b\(\)]/g, '').toUpperCase() : "";
     const d1 = a1 ? clean(a1.degree) : ""; 
     const d2 = clean(a2.degree);
     const d3 = clean(a3.degree);
+
+    // NUEVO: Detectar si es una cadencia secundaria (Inflexión)
+    let esCadenciaSecundaria = false;
+    if (d2.includes('/')) {
+        const parts = d2.split('/'); // ej: ["V", "VI"]
+        if (parts[1] === d3) {
+            esCadenciaSecundaria = true;
+        }
+    }
+
 
     const finalize = (msg) => {
         let finalMsg = isProlongation ? `${msg} (con prolongación final)` : msg;
@@ -3219,6 +3239,16 @@ function detectCadenceSequence(a1, a2, a3, r1, r2, r3, p1, p2, p3, mode, tonicPC
         return finalMsg;
     };
 
+    if (esCadenciaSecundaria) {
+        const r2Fund = r2.estadoTexto.includes("Fundamental") || r2.tipo === "Dominante sobre tónica";
+        const r3Fund = r3.estadoTexto.includes("Fundamental");
+        
+        if (r2Fund && r3Fund && d2.startsWith("V")) {
+            return finalize(`Cadencia Auténtica (sobre el grado ${d3})`);
+        } else {
+            return finalize(`Cadencia Aut. Imperfecta (sobre el grado ${d3})`);
+        }
+    }
 
     if (d3 === "I") {
         const esInestable = r3.tipo.toLowerCase().includes("dominante") || 
@@ -3282,13 +3312,17 @@ function detectCadenceSequence(a1, a2, a3, r1, r2, r3, p1, p2, p3, mode, tonicPC
     if (d2 === "V" && (d3 === "VI" || d3 === "IV" || (d3 === "II" && !r3.estadoTexto.includes("Fundamental")))) {
         return finalize("Cadencia Rota (V -> sustituto de tónica)");
     }
-    if (d3 === "V") {
-        // Verificar calidad del acorde. Si es Menor, no es Semicadencia real.
+        if (d3 === "V" || d3.startsWith("V/")) {
         if (r3.tipo.includes("Menor")) {
-            return finalize("Final sobre V menor (v): No es Semicadencia (falta sensible).");
+            return finalize("Final sobre acorde menor: No es Semicadencia (falta sensible).");
+        }
+        if (d3.startsWith("V/")) {
+            const target = d3.split('/')[1];
+            return finalize(`Semicadencia (sobre la dominante de ${target})`);
         }
         return finalize("Semicadencia (Descanso sobre la Dominante)");
     }
+
     if (d3 === "IV") return finalize("Semicadencia (Descanso sobre la Subdominante)");
     
     return "Enlace sin función cadencial clara";
@@ -3383,6 +3417,7 @@ if (res2.estadoTexto && res2.estadoTexto.includes("2ª Inversión")) return [];
 function detectarModulaciones(results, adaptations, structuralChords, chordStartBeats, globalTonicEng, globalMode) {
     const tonalidadLocal = [];
     const modulaciones = [];
+    const inflexiones = [];
 
     for (let i = 0; i < results.length; i++) {
         tonalidadLocal.push({ tonic: globalTonicEng, mode: globalMode });
@@ -3622,6 +3657,15 @@ tipo.includes("Novena de Dominante")
                 }
             });
         });
+        // --- NUEVO FILTRO: Evitar falsas inflexiones en acordes diatónicos ---
+        const notasDelAcorde = getChordPCsLocal(structuralChords[`chord${i+1}`]);
+        const esTotalmenteDiatonico = notasDelAcorde.every(pc => oldScalePCs.includes(pc));
+
+        // Si el acorde pertenece 100% a la escala original y es una tríada pura, 
+        // es un grado normal (I, vii°...), no una dominante secundaria.
+        if (esTotalmenteDiatonico && (tipo === "Mayor" || tipo === "Disminuido" || tipo === "Mayor (omit 5)")) {
+            continue;
+        }
 
                 let esInflexion = !tieneNotaDiferencial;
         const lookaheadLimit = Math.min(results.length, i + 6);
@@ -3645,7 +3689,15 @@ tipo.includes("Novena de Dominante")
 }
 
 
-        if (esInflexion) continue; 
+    if (esInflexion) {
+    inflexiones.push({
+        acorde: i + 1,
+        desdeTonica: tonActual.tonic,
+        haciaEsp: targetEsp // El objetivo de la dominante secundaria
+    });
+    continue;
+}
+
 
 
                 const newTonicEng = pcToEnglishTonic(targetPC, newMode);
@@ -3671,7 +3723,12 @@ tipo.includes("Novena de Dominante")
                 idxPivot--;
                 continue;
             }
+const esDominanteVieja = (temp.rootPC === (currentTonicPC + 7) % 12) &&
+                                     (temp.tipo.includes("Mayor") || temp.tipo.includes("Dominante") || temp.tipo.includes("7 (omit 5)"));
 
+            if (esDominanteVieja) {
+                break;
+            }
             const notas = [];
             ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
                 if (tempChord[v] && tempChord[v].pitchClass !== undefined) {
@@ -3931,7 +3988,7 @@ tipo.includes("Novena de Dominante")
         }
     }
 
-    return { tonalidadLocal, modulaciones };
+    return { tonalidadLocal, modulaciones, inflexiones };
 }
 
 
@@ -4072,10 +4129,11 @@ for(let i=0; i<totalChords; i++) {
         // --- DETECCIÓN DE MODULACIONES ---
         const _tElMod = document.getElementById('tonic');
         const _mElMod = document.getElementById('mode');
-        const { tonalidadLocal, modulaciones } = detectarModulaciones(
+        const { tonalidadLocal, modulaciones, inflexiones } = detectarModulaciones(
     results, adaptations, structuralChords, chordStartBeats,
     _tElMod.value, _mElMod.value
 );
+
 globalTonalidadLocal = tonalidadLocal;
 
         // --- DETECCIÓN DE MIXTURA MODAL ---
@@ -4531,6 +4589,28 @@ warnings.push(...checkSpacing(parsed));
             cadence = detectCadenceSequence(a1, a2, a3, r1, r2, r3, p1, p2, p3, tonFinal.mode, getTonicPC(tonFinal.tonic));
         }
 
+        // ── Cadencias de frase (fin de cada ligadura de fraseo) ──────────────
+        const phraseCadences = [];  // [{slur, label}]
+        for (const slur of phraseSlurs) {
+            const endIdx = slur.end;      // 1-based chord index del fin de slur
+            if (endIdx < 2 || endIdx > totalChords) continue;
+
+            const lastIdx = endIdx - 1;   // 0-based
+            const fa3 = adaptations[lastIdx], fr3 = results[lastIdx], fp3 = structuralChords[`chord${lastIdx+1}`];
+            const fa2 = adaptations[lastIdx-1], fr2 = results[lastIdx-1], fp2 = structuralChords[`chord${lastIdx}`];
+            let fa1 = null, fr1 = null, fp1 = null;
+            if (endIdx >= 3) {
+                fa1 = adaptations[lastIdx-2]; fr1 = results[lastIdx-2]; fp1 = structuralChords[`chord${lastIdx-1}`];
+            }
+            const tonSlur = globalTonalidadLocal[lastIdx] || {
+                tonic: document.getElementById('tonic').value,
+                mode: document.getElementById('mode').value
+            };
+            const slurCadence = detectCadenceSequence(fa1, fa2, fa3, fr1, fr2, fr3, fp1, fp2, fp3, tonSlur.mode, getTonicPC(tonSlur.tonic));
+            phraseCadences.push({ slur, label: slurCadence });
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
 
         // --- SUPRIMIR ERRORES EN REPETICIONES DE SECUENCIAS ---
         // Reglas:
@@ -4702,21 +4782,18 @@ const cifrado = generarCifradoZamacois(
 
             // Lógica de Dominantes
             let infoDominante = "";
-            if (r.tipo.includes("M7m") || r.tipo.includes("Mayor con 7ª menor")) {
-                const target = mapDominantes[r.fundamental] || "";
-                const localTon   = tonalidadLocal[i];
-                const localLabel = tonicLabels[localTon.tonic] || localTon.tonic;
+if (adapt.esDominanteFuncional) {
+    const target = mapDominantes[r.fundamental] || "";
+    const localTon = tonalidadLocal[i];
+    const localLabel = tonicLabels[localTon.tonic] || localTon.tonic;
 
-                if (target) {
-                    if (target === localLabel) {
-                        infoDominante = ` <span style="color:#a5b4fc; font-size:0.9em;">(dominante)</span>`;
-                    } else {
-                        infoDominante = ` <span style="color:#a5b4fc; font-size:0.9em;">(dominante de ${target})</span>`;
-                    }
-                } else {
-                    infoDominante = ` <span style="color:#a5b4fc; font-size:0.9em;">(dominante)</span>`;
-                }
-            }
+    if (target && target !== localLabel) {
+        infoDominante = ` <span style="color:#a5b4fc; font-size:0.9em;">(dominante de ${target})</span>`;
+    } else {
+        infoDominante = ` <span style="color:#a5b4fc; font-size:0.9em;">(dominante)</span>`;
+    }
+}
+
 
             let gradoStr = adapt.formattedDegree ? 
                 `<span style="color:#fbbf24; font-weight:bold; margin-right:5px;">${adapt.formattedDegree}</span>` : "";
@@ -4782,7 +4859,10 @@ const cifrado = generarCifradoZamacois(
                         infos.push(`🎼 <strong>Modulación ${mod.tipo}</strong> (inicia en Acorde ${mod.acordeD}): ${desdeLbl} ${desdeMStr} → ${haciaLbl} ${haciaMStr}${mod.pivoteDesc}`);
 
         });
-
+inflexiones.forEach(inf => {
+    const tonOriginal = tonicLabels[inf.desdeTonica] || inf.desdeTonica;
+    infos.push(`🎼 <strong>Inflexión modulante</strong> (Acorde ${inf.acorde}): Actúa como dominante pasajera de ${inf.haciaEsp}, pero regresa a la tonalidad de ${tonOriginal}.`);
+});
         if (errors.length) errors.forEach(e => html += `<div class="error-item error-critical"><span>❌</span><div>${e}</div></div>`);
         if (warnings.length) warnings.forEach(w => html += `<div class="error-item error-warning"><span>⚠️</span><div>${w}</div></div>`);
         if (infos.length) infos.forEach(inf => html += `<div class="error-item error-info"><span>ℹ️</span><div>${inf}</div></div>`);
@@ -4815,11 +4895,33 @@ const cifrado = generarCifradoZamacois(
         }
 
    
+        // ── Sección: Cadencias de Frase ──────────────────────────────────────
+        if (phraseCadences.length > 0) {
+            html += `<div class="chord-description-section" style="border-left-color:#0ea5e9; background:rgba(14,165,233,0.06);">
+                <h3 style="color:#38bdf8;">🎼 Cadencias de Frase</h3>`;
+            phraseCadences.forEach((pc, idx) => {
+                const isFinal = (pc.slur.end === totalChords);
+                const badge = isFinal
+                    ? `<span style="font-size:0.78em; background:rgba(34,197,94,0.15); color:#4ade80; border:1px solid #22c55e; border-radius:4px; padding:1px 6px; margin-left:6px;">= cadencia final</span>`
+                    : "";
+                html += `<div class="error-item error-info" style="border-left-color:#0ea5e9;">
+                    <span>🎵</span>
+                    <div>
+                        <strong>Frase ${idx+1}</strong>
+                        <span style="color:#64748b; font-size:0.85em;"> (acordes ${pc.slur.start}–${pc.slur.end})</span>${badge}<br>
+                        <span style="color:#e2e8f0;">${pc.label}</span>
+                    </div>
+                </div>`;
+            });
+            html += `</div>`;
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
         html += `<div class="chord-description-section" style="border-left-color:#a855f7;">
-                    <h3 style="color:#c084fc;">Cadencia:</h3>
+                    <h3 style="color:#c084fc;">Cadencia${phraseCadences.length > 0 ? ' Final' : ''}:</h3>
                     <div class="error-item error-info">
                         <span>🎹</span>
-                        <div>${cadence}, NOTA:se  señala los últimos acordes y, en un ejercicio de armonía, no siempre es una cadencia. </div>
+                        <div>${cadence}</div>
                     </div>
                 </div>`;
         
@@ -5274,6 +5376,38 @@ function toggleOrnamentMode() {
     }
 }
 
+function marcarFinFraseo() {
+    let lastEnd = 0;
+    const validSlurs = [];
+
+    // Buscamos el último cierre de fraseo estrictamente anterior al acorde actual
+    for (let slur of phraseSlurs) {
+        if (slur.end < activeChord) {
+            validSlurs.push(slur);
+            if (slur.end > lastEnd) {
+                lastEnd = slur.end;
+            }
+        }
+    }
+
+    // El nuevo inicio es justo después del último cierre, o 1 si no hay ninguno
+    const start = lastEnd > 0 ? lastEnd + 1 : 1;
+    const end = activeChord;
+
+    // Actualizamos la lista descartando los fraseos posteriores (si existían) para evitar solapamientos
+    phraseSlurs = validSlurs;
+    phraseSlurs.push({ start: start, end: end });
+
+    // Guardar estado y refrescar la partitura
+    saveState();
+    renderScore();
+
+    // Cerrar el menú desplegable
+    if (activeMenu) {
+        activeMenu.classList.remove('show');
+        activeMenu = null;
+    }
+}
 
 
 function changeMeter(val) {
@@ -5508,10 +5642,21 @@ if (cipherMode === 'baroque') {
             }
 
             let noteStr = "";
+
+            // ── Ligaduras de fraseo (solo soprano) ──────────────────────────
+            let slurOpen = "", slurClose = "";
+            if (vId === 'soprano' && phraseSlurs.length > 0) {
+                if (phraseSlurs.some(s => s.start === i)) slurOpen = "(";
+                // En modo agrupado el cierre puede estar en cualquier acorde fusionado [i, nextI-1]
+                const mergeEnd = nextI - 1;
+                if (phraseSlurs.some(s => s.end >= i && s.end <= mergeEnd)) slurClose = ")";
+            }
+            // ────────────────────────────────────────────────────────────────
+
             if (!p || p.baseName === "") {
                 // isOrnament en silencio = bandera de "silencio invisible (x)"
                 const restChar = (p && p.isOrnament) ? "x" : "z";
-                noteStr = numbering + restChar + durStr;
+                noteStr = numbering + slurOpen + restChar + durStr + slurClose;
             } else {
                 let prefix = "";
                 if (p.isOrnament) prefix = (vId === 'soprano' || vId === 'tenor') ? '"^X"' : '"_X"';
@@ -5566,7 +5711,7 @@ if (cipherMode === 'baroque') {
                 if (p.octave === 3) n += ",";
                 if (p.octave === 5) n = n.toLowerCase();
                 if (p.octave === 6) n = n.toLowerCase() + "'";
-                noteStr = numbering + annotations + prefix + acc + n + durStr + (addTie ? "-" : "");
+                noteStr = numbering + annotations + slurOpen + prefix + acc + n + durStr + (addTie ? "-" : "") + slurClose;
             }
 
             str += noteStr;
@@ -6245,6 +6390,51 @@ function processFileLoad(input) {
     reader.readAsText(file);
 }
 
+// ─── Extrae ligaduras de fraseo ( ) de una línea de voz ABC ───────────────────
+// Devuelve [{start: noteIdx0based, end: noteIdx0based}, ...]
+function extractSlursFromAbcVoice(str) {
+    // Eliminar anotaciones de texto "^1", "_6", etc. para no confundir los índices
+    const s = str.replace(/"[^"]*"/g, ' ');
+    const slurs = [];
+    let noteIdx = 0;
+    const slurStack = [];  // stack de noteIdx donde se abrió cada slur
+    let i = 0;
+    while (i < s.length) {
+        const ch = s[i];
+        if (ch === '(') {
+            slurStack.push(noteIdx);
+            i++;
+            continue;
+        }
+        // Saltar alteraciones y marcas que no son notas
+        if ('_^='.includes(ch)) { i++; continue; }
+        // Barra de compás: NO incrementa noteIdx (como en parseVoiceNotes)
+        if (ch === '|') { i++; continue; }
+        // Nota o silencio real
+        if (/[a-gA-Gxz]/.test(ch)) {
+            i++; // consumir el carácter de nota
+            // Consumir modificadores de octava , '
+            while (i < s.length && (s[i] === ',' || s[i] === "'")) i++;
+            // Consumir duración (dígitos y barras)
+            while (i < s.length && /[\d\/]/.test(s[i])) i++;
+            // Consumir ligadura de unión (tie) opcional
+            if (i < s.length && s[i] === '-') i++;
+            // Detectar cierre(s) de slur inmediatamente después
+            while (i < s.length && s[i] === ')') {
+                if (slurStack.length > 0) {
+                    slurs.push({ start: slurStack.pop(), end: noteIdx });
+                }
+                i++;
+            }
+            noteIdx++;
+            continue;
+        }
+        i++;
+    }
+    return slurs;
+}
+// ──────────────────────────────────────────────────────────────────────────────
+
 function parseAbcToState(abc) {
     // 1. Extraer Metadatos
     const tonicMatch = abc.match(/K:\s*([A-G][#b]?)(m?)/i);
@@ -6350,6 +6540,13 @@ if (tempoMatch) {
     const aNotes = parseVoiceNotes(voicesData[2]);
     const tNotes = parseVoiceNotes(voicesData[3]);
     const bNotes = parseVoiceNotes(voicesData[4]);
+
+    // Extraer ligaduras de fraseo desde la voz 1 (soprano)
+    // Los índices 0-based de nota se convierten a índices 1-based de acorde
+    phraseSlurs = extractSlursFromAbcVoice(voicesData[1]).map(s => ({
+        start: s.start + 1,
+        end:   s.end   + 1
+    }));
 
     if (sNotes.length === 0) return;
 
@@ -7462,10 +7659,19 @@ K:${tVal}${mVal === 'minor' ? 'm' : ''}
                 }
             }
 
+            // ── Ligaduras de fraseo (solo voz 1 = soprano) ──────────────────
+            let slurOpenG = "", slurCloseG = "";
+            if (vId === 1 && phraseSlurs.length > 0) {
+                if (phraseSlurs.some(s => s.start === i)) slurOpenG = "(";
+                const mergeEndG = nextI - 1;
+                if (phraseSlurs.some(s => s.end >= i && s.end <= mergeEndG)) slurCloseG = ")";
+            }
+            // ────────────────────────────────────────────────────────────────
+
             // Si p es null O el nombre de la nota está vacío, es un silencio
             if (!p || p.baseName === "") {
                 // isOrnament en silencio = bandera de "silencio invisible (x)"
-                lineBuffer += ((p && p.isOrnament) ? "x" : "z") + dur;
+                lineBuffer += slurOpenG + ((p && p.isOrnament) ? "x" : "z") + dur + slurCloseG;
             } else {
                 let prefix = (p.isOrnament) ? ((vId === 1 || vId === 3) ? '"^X"' : '"_X"') : "";
                                 let acc = "";
@@ -7519,7 +7725,7 @@ K:${tVal}${mVal === 'minor' ? 'm' : ''}
                 else if (p.octave === 3) abcNote = n + ",";
                 else if (p.octave === 2) abcNote = n + ",,";
                 
-                lineBuffer += annotations + prefix + acc + abcNote + dur + (addTie ? "-" : "");
+                lineBuffer += annotations + slurOpenG + prefix + acc + abcNote + dur + (addTie ? "-" : "") + slurCloseG;
 
             }
 
@@ -7950,7 +8156,7 @@ function drawVisualErrorLines() {
     // CÓDIGO DE COLORES:
     // - Líneas ROJAS SÓLIDAS = Quintas/Octavas PARALELAS
     // - Líneas NARANJAS PUNTEADAS = Quintas/Octavas DIRECTAS
-    // - Círculos ROJOS = Saltos melódicos prohibidos
+    // - Líneas VERDES DISCONTINUAS = Saltos melódicos prohibidos (entre las dos cabezas)
     // - Líneas MORADAS = Cruzamientos de voces
     // - Flechas ROJAS = Sensible sin resolución
     // - Rectángulos AZULES = Notas fuera de tesitura
@@ -8069,40 +8275,47 @@ function drawVisualErrorLines() {
         drawLine(el1_v2, el2_v2);
     });
     }
-    // 2. DIBUJAR SALTOS MELÓDICOS PROHIBIDOS (círculos rojos)
+    // 2. DIBUJAR SALTOS MELÓDICOS PROHIBIDOS (línea verde discontinua entre cabezas de nota)
     if (visualMelodicLeaps && visualMelodicLeaps.length > 0) {
-        const voiceToIdx = { 'soprano': 0, 'alto': 1, 'tenor': 2, 'bass': 3 };
-        
+        const voiceToIdxL = { 'soprano': 0, 'alto': 1, 'tenor': 2, 'bass': 3 };
+
         visualMelodicLeaps.forEach(leap => {
-            const coords = chordVisualMap[leap.chord];
-            if (!coords) return;
-            
-            const vIdx = voiceToIdx[leap.voice];
-            const el = svg.querySelector(`[class*="abcjs-v${vIdx}"][class*="abcjs-m${coords.m}"][class*="abcjs-n${coords.n}"]`);
-            
-            if (el) {
-                const rect = el.getBoundingClientRect();
-                const svgRect = svg.getBoundingClientRect();
-                const viewBox = svg.viewBox.baseVal;
-                const vbWidth = viewBox.width || svg.width.baseVal.value || svgRect.width;
-                const vbHeight = viewBox.height || svg.height.baseVal.value || svgRect.height;
-                const scaleX = vbWidth / svgRect.width;
-                const scaleY = vbHeight / svgRect.height;
-                
-                const cx = (viewBox.x || 0) + (rect.left + rect.width / 2 - svgRect.left) * scaleX;
-                const cy = (viewBox.y || 0) + (rect.top + rect.height / 2 - svgRect.top) * scaleY;
-                
-                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                circle.setAttribute('cx', cx);
-                circle.setAttribute('cy', cy);
-                circle.setAttribute('r', '8');
-                circle.setAttribute('stroke', '#dc2626');
-                circle.setAttribute('stroke-width', '2');
-                circle.setAttribute('fill', 'none');
-                circle.setAttribute('opacity', '0.9');
-                circle.classList.add('error-circle');
-                svg.appendChild(circle);
-            }
+            // El salto va del acorde (chord-1) al acorde chord
+            const srcChord  = leap.chord - 1;
+            const dstChord  = leap.chord;
+            const coordsSrc = chordVisualMap[srcChord];
+            const coordsDst = chordVisualMap[dstChord];
+            if (!coordsSrc || !coordsDst) return;
+
+            const vIdx = voiceToIdxL[leap.voice];
+
+            // Buscar el elemento notehead para cada acorde
+            const findNH = (m, n) => {
+                let el = svg.querySelector(`.abcjs-v${vIdx} .abcjs-m${m}.abcjs-n${n} .abcjs-notehead path`);
+                if (!el) el = svg.querySelector(`.abcjs-v${vIdx} .abcjs-m${m}.abcjs-n${n} .abcjs-notehead`);
+                if (!el) el = svg.querySelector(`[class*="abcjs-v${vIdx}"][class*="abcjs-m${m}"][class*="abcjs-n${n}"]`);
+                return el;
+            };
+
+            const elSrc = findNH(coordsSrc.m, coordsSrc.n);
+            const elDst = findNH(coordsDst.m, coordsDst.n);
+            if (!elSrc || !elDst) return;
+
+            const ptSrc = getPointInSVG(elSrc);
+            const ptDst = getPointInSVG(elDst);
+            if (!ptSrc || !ptDst) return;
+
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', ptSrc.x);
+            line.setAttribute('y1', ptSrc.y);
+            line.setAttribute('x2', ptDst.x);
+            line.setAttribute('y2', ptDst.y);
+            line.setAttribute('stroke', '#22c55e');
+            line.setAttribute('stroke-width', '2.5');
+            line.setAttribute('stroke-dasharray', '6, 4');
+            line.setAttribute('opacity', '0.95');
+            line.classList.add('error-circle'); // misma clase para limpieza automática
+            svg.appendChild(line);
         });
     }
     
@@ -8509,7 +8722,7 @@ function toggleAgrupar() {
                     <li><strong>Sugerir Acorde:</strong> Selecciona una nota en el bajo y usa esta opción. Puedes escribir un cifrado interválico (ej. <code>6,4</code> o <code>#7</code>) para que el sistema construya el acorde, o dejarlo en blanco para ver sugerencias diatónicas que no cometan faltas de enlace.</li>
                     <li><strong>Cifrado Barroco:</strong> El programa calcula y muestra automáticamente el bajo cifrado interválico debajo de la partitura.</li>
                     <li><strong>Agrupar (🔗):</strong> Fusiona notas repetidas en duraciones más largas o ligaduras. <em>El análisis se desactiva en este modo para evitar falsos errores rítmicos.</em></li>
-                    <li><strong>Editor Código ABC:</strong> Acceso al código fuente de la partitura para ediciones manuales.</li>
+                    <li><strong>Editor Código ABC:</strong> Acceso al código fuente de la partitura para ediciones manuales. Puedes añadir <strong>ligaduras de fraseo</strong> escribiendo <code>(</code> antes del primer acorde y <code>)</code> después del último de cada frase (solo en la voz del soprano). El analizador detectará automáticamente las <strong>cadencias de frase</strong> en cada cierre de ligadura.</li>
                     <li><strong>Modo Audición:</strong> Oculta la partitura visual para practicar dictados armónicos.</li>
                 </ul>
             </div>
@@ -8543,8 +8756,8 @@ function toggleAgrupar() {
                             <span><strong>Azul punteada:</strong> Disonancias consecutivas</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 10px;">
-                            <div style="width: 14px; height: 14px; border: 2px solid #dc2626; border-radius: 50%;"></div>
-                            <span><strong>Círculo rojo:</strong> Salto melódico prohibido</span>
+                            <div style="width: 25px; height: 0; border-top: 2.5px dashed #22c55e;"></div>
+                            <span><strong>Verde discontinua:</strong> Salto melódico prohibido</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <div style="width: 25px; height: 3px; background: #9333ea;"></div>
