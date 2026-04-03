@@ -835,7 +835,7 @@ function toggleMenu(menuId) {
     updateMenuItems();
 }
 
-// Cerrar menús al hacer clic fuera
+
 // Cerrar menús al hacer clic fuera O al seleccionar una opción
 document.addEventListener('click', function(event) {
     const isClickInsideMenu = event.target.closest('.menu-group');
@@ -1066,6 +1066,7 @@ const mapDominantes = {
     'La': 'Re',  'La#': 'Re#', 'Sib': 'Mib',
     'Si': 'Mi'
 };
+let globalResults = [];
 let globalTonalidadLocal = [];
 let visualErrorState = [];
 let visualMelodicLeaps = []; // Saltos melódicos prohibidos
@@ -1073,6 +1074,7 @@ let visualCrossings = []; // Cruzamientos de voces
 let visualLeadingTone = [];
 let visualTessitura = [];
 let visualSequences = [];
+let visualRetardos = []; // [{chordIdx: 1-based, voice: 'soprano'|..., resolvedRes: {...}}]
 let phraseSlurs = [];     // [{start: chordIdx1based, end: chordIdx1based}] — ligaduras de fraseo
 let chordVisualMap = {};
 let isEarTrainingMode = false;
@@ -3038,14 +3040,18 @@ let vocesSensible = [];
     }
 });
 
-if (vocesSensible.length === 0) return false;
+// Comprobar si al menos una de esas voces resuelve correctamente (si existen)
+let resuelvePorSemitono = false;
+if (vocesSensible.length > 0) {
+    resuelvePorSemitono = vocesSensible.some(v => {
+        if (!acordeSiguiente[v]) return false;
+        const movAbs = Math.abs(acordeSiguiente[v].midi - acordeActual[v].midi);
+        return movAbs === 1 || movAbs === 11;
+    });
+}
 
-// Comprobar si al menos una de esas voces resuelve correctamente
-const resuelvePorSemitono = vocesSensible.some(v => {
-    if (!acordeSiguiente[v]) return false; // Si esta voz se silencia, se ignora
-    const movAbs = Math.abs(acordeSiguiente[v].midi - acordeActual[v].midi);
-    return movAbs === 1 || movAbs === 11;
-});
+// Nueva comprobación: ¿Resuelve la fundamental a donde se espera (ej. V -> I)?
+const resuelveFundamental = (resSiguiente.rootPC === targetEsperadoPC);
 
 
 
@@ -3060,7 +3066,8 @@ const resuelvePorSemitono = vocesSensible.some(v => {
 
     const esCambioPosicionDominante = (targetEsperadoPC === targetSigPC);
 
-    return resuelvePorSemitono || esCambioPosicionDominante;
+    return resuelvePorSemitono || esCambioPosicionDominante || resuelveFundamental;
+
 }
 
 function adaptarAnalisisParaReglas(resNuevo, chordActual = null, chordSiguiente = null, resSiguiente = null, localTonicPC = null, localMode = null) {
@@ -3996,6 +4003,132 @@ const esDominanteVieja = (temp.rootPC === (currentTonicPC + 7) % 12) &&
 
 
 
+// ================================================================
+// DETECCIÓN DE RETARDOS
+// ================================================================
+// Un retardo es una nota del acorde anterior que se mantiene en el siguiente
+// (no identificado como acorde conocido), y que luego resuelve por grado
+// en el acorde posterior. La sustitución de las notas de retardo por las de
+// resolución debe producir un acorde conocido.
+// ================================================================
+function detectarRetardos(results, structuralChords, totalChords) {
+    visualRetardos = []; // Reset global
+
+            for (let i = 0; i < totalChords; i++) {
+            const r = results[i];
+            
+            // Ampliamos la detección: incluimos errores y acordes "sospechosos" (falsos positivos)
+            const esSospechoso = r && (
+                r.error || 
+                (r.tipo && (
+                    r.tipo.includes("omit") || 
+                    r.tipo.includes("Novena") || 
+                    r.estadoTexto === "Posición desconocida" ||
+                    r.estadoTexto.includes("No practicable")
+                ))
+            );
+
+            if (!r || !esSospechoso || r.insuficiente) continue;
+
+        // Necesitamos acorde anterior y siguiente
+        if (i === 0 || i >= totalChords - 1) continue;
+
+        const chordActual   = structuralChords[`chord${i + 1}`]; // 1-based
+        const chordAnterior = structuralChords[`chord${i}`];     // el anterior (0-based i → 1-based i)
+        const chordSiguiente = structuralChords[`chord${i + 2}`];
+
+        if (!chordActual || !chordAnterior || !chordSiguiente) continue;
+
+        // --- PASO 1: Localizar notas retenidas del acorde anterior ---
+        const vocesRetenidas = [];
+        ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
+            const nAct = chordActual[v];
+            const nAnt = chordAnterior[v];
+            if (!nAct || !nAnt) return;
+            if (!nAct.baseName || !nAnt.baseName) return;
+            if (nAct.baseName === '' || nAnt.baseName === '') return;
+
+            // Mismo nombre de nota (diatónico) y misma alteración real → misma altura exacta
+            if (nAct.baseName === nAnt.baseName && nAct.realAcc === nAnt.realAcc) {
+                vocesRetenidas.push(v);
+            }
+        });
+        if (vocesRetenidas.length === 0) continue;
+
+        // --- PASO 2: De esas notas, cuáles resuelven por grado (≤ 2 st) en el acorde siguiente ---
+        const posiblesRetardos = [];
+        vocesRetenidas.forEach(v => {
+            const nAct = chordActual[v];
+            const nSig = chordSiguiente[v];
+            if (!nSig || !nSig.baseName || nSig.baseName === '') return;
+
+            const diff = Math.abs(nSig.midi - nAct.midi);
+            // Debe moverse (no permanecer igual) y por grado (≤ 2 semitonos)
+            if (diff > 0 && diff <= 2) {
+                posiblesRetardos.push(v);
+            }
+        });
+        if (posiblesRetardos.length === 0) continue;
+
+        // --- PASO 3: Sustituir las notas de retardo por las de resolución y reidentificar ---
+        const chordModificado = {
+            soprano: chordActual.soprano,
+            alto:    chordActual.alto,
+            tenor:   chordActual.tenor,
+            bass:    chordActual.bass
+        };
+        posiblesRetardos.forEach(v => {
+            chordModificado[v] = chordSiguiente[v];
+        });
+
+        // Determinar el bajo de referencia para la identificación
+        let bajoRef = chordModificado.bass;
+        if (!bajoRef || !bajoRef.baseName || bajoRef.baseName === '') {
+            for (const vv of ['tenor', 'alto', 'soprano']) {
+                if (chordModificado[vv] && chordModificado[vv].baseName && chordModificado[vv].baseName !== '') {
+                    bajoRef = chordModificado[vv];
+                    break;
+                }
+            }
+        }
+        if (!bajoRef) continue;
+
+                const resModificado = identifyingChord(chordModificado, bajoRef);
+        
+        // La resolución debe ser un acorde sólido, no otro sospechoso
+        const resModificadoEsSospechoso = resModificado.error || 
+            (resModificado.tipo && (
+                resModificado.tipo.includes("Novena de Sensible") || 
+                resModificado.estadoTexto === "Posición desconocida" ||
+                resModificado.estadoTexto.includes("No practicable")
+            ));
+
+        if (resModificadoEsSospechoso || resModificado.insuficiente) continue;
+
+
+        // ¡RETARDO CONFIRMADO!
+        // Actualizamos el resultado para que el acorde sea reconocido
+        results[i] = Object.assign({}, resModificado, {
+            esRetardo: true,
+            vocesRetardo: posiblesRetardos
+        });
+
+        // Etiquetar el acorde de RESOLUCIÓN (i+1) para que su cifrado muestre
+        // el intervalo de resolución explícitamente (ej. "8" en un retardo 9-8).
+        if (i + 1 < totalChords && results[i + 1]) {
+            results[i + 1] = Object.assign({}, results[i + 1], {
+                esResolucionDeRetardo: true,
+                vocesResolucion: posiblesRetardos
+            });
+        }
+
+        // Guardar para anotación visual (una entrada por voz de retardo)
+        posiblesRetardos.forEach(v => {
+            visualRetardos.push({ chordIdx: i + 1, voice: v }); // chordIdx es 1-based
+        });
+    }
+}
+
 function analyzeHarmony() {
 visualErrorState = [];
 visualMelodicLeaps = [];
@@ -4073,6 +4206,13 @@ for(let i=1; i<=totalChords; i++) {
     // Solución simple: hacer primero todas las identificaciones, luego las adaptaciones
     results.push(res);
 }
+
+// ── DETECCIÓN DE RETARDOS ──────────────────────────────────────────────────
+// Tras la primera pasada, revisamos los acordes no identificados y comprobamos
+// si contienen retardos. Si se confirman, se actualiza results[i] para que
+// las pasadas posteriores (adaptaciones, modulaciones) los traten como acordes normales.
+detectarRetardos(results, structuralChords, totalChords);
+globalResults = results;
 
 // Segunda pasada para adaptaciones con contexto
 for(let i=0; i<totalChords; i++) {
@@ -4751,6 +4891,15 @@ const esSilencio = !['soprano', 'alto', 'tenor', 'bass'].some(v =>
                 continue; 
             }
 
+            // Badge de retardo
+            const retardoBadge = r.esRetardo
+                ? `<span title="Contiene retardo(s) en: ${(r.vocesRetardo||[]).map(v=>({soprano:'Soprano',alto:'Contralto',tenor:'Tenor',bass:'Bajo'}[v])).join(', ')}"
+                         style="background:rgba(251,191,36,0.18); color:#fbbf24; border:1px solid #f59e0b;
+                                border-radius:4px; padding:1px 6px; font-size:0.78em; margin-left:6px;
+                                font-weight:bold; cursor:default; letter-spacing:0.03em;">
+                       🎵 retardo</span>`
+                : "";
+
             const currentChord = structuralChords[`chord${i+1}`];
 const nextChordData = (i < totalChords - 1) ? structuralChords[`chord${i+2}`] : null;
             const tEl = document.getElementById('tonic');
@@ -4761,7 +4910,13 @@ const cifrado = generarCifradoZamacois(
     tonalidadLocal[i].tonic,
     tonalidadLocal[i].mode,
     (i > 0) ? structuralChords[`chord${i}`] : null, 
-    nextChordData
+    nextChordData,
+    // Información de retardo para cifrado correcto:
+    // - Si ES el acorde de retardo: usamos su resultado subyacente y las voces retardadas
+    // - Si ES la resolución: indicamos qué voces tenían el retardo en el acorde anterior
+    r.esRetardo          ? { tipo: 'retardo',    vocesRetardo:   r.vocesRetardo,    res: r }
+    : r.esResolucionDeRetardo ? { tipo: 'resolucion', vocesResolucion: r.vocesResolucion }
+    : null
 );
 
 
@@ -4844,7 +4999,7 @@ if (adapt.esDominanteFuncional) {
                 <span>🎵</span>
                 <div>
                     <strong>Acorde ${i+1}:</strong> 
-                    ${gradoStr}${r.fundamental} ${tipoCorto}${infoDominante}${estadoHtml}${mixturaBadge}${tonLabel}${badgeSilencios}
+                    ${gradoStr}${r.fundamental} ${tipoCorto}${infoDominante}${estadoHtml}${mixturaBadge}${retardoBadge}${tonLabel}${badgeSilencios}
                     <span style="display:inline-block; margin-left:8px; padding:2px 6px; background:#475569; border-radius:4px; color:#fcd34d; font-family:monospace; font-weight:bold;">
                         ${cifrado}
                     </span>
@@ -4930,7 +5085,7 @@ inflexiones.forEach(inf => {
         
         resultsDiv.innerHTML = html;
         toggleResultsWindow(true);
-        
+        renderScore();
         setTimeout(drawVisualErrorLines, 500);
     } catch (e) {
         console.error(e);
@@ -5630,13 +5785,21 @@ const globalMeasureContext = buildGlobalMeasureContext();
 
                 let cifradoStr = "";
 if (cipherMode === 'baroque') {
-    // Usar la tonalidad local guardada previamente en globalTonalidadLocal
     const tonLoc = (typeof globalTonalidadLocal !== 'undefined' && globalTonalidadLocal[i-1]) 
                    ? globalTonalidadLocal[i-1] 
                    : { tonic: tVal, mode: mVal };
+    
+    // Recuperar info del retardo si existe
+    let retInfo = null;
+    if (typeof globalResults !== 'undefined' && globalResults[i-1]) {
+        const r = globalResults[i-1];
+        if (r.esRetardo) retInfo = { tipo: 'retardo', vocesRetardo: r.vocesRetardo, res: r };
+        else if (r.esResolucionDeRetardo) retInfo = { tipo: 'resolucion', vocesResolucion: r.vocesResolucion };
+    }
                    
-    cifradoStr = generarCifradoZamacois(currentChordObj, tonLoc.tonic, tonLoc.mode, prevChordObj, nextChordObj);
+    cifradoStr = generarCifradoZamacois(currentChordObj, tonLoc.tonic, tonLoc.mode, prevChordObj, nextChordObj, retInfo);
 } 
+
                 
 
                 if (cifradoStr && cifradoStr.trim() !== "") {
@@ -6020,9 +6183,11 @@ if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
 
 }); 
 
-function generarCifradoZamacois(chord, tonicVal, modeVal, prevChord = null, nextChord = null) {
+function generarCifradoZamacois(chord, tonicVal, modeVal, prevChord = null, nextChord = null, retardoInfo = null) {
     if (!chord) return "";
-
+if (retardoInfo && retardoInfo.tipo === 'retardo' && retardoInfo.vocesRetardo && retardoInfo.vocesRetardo.includes('bass')) {
+        return "＼"; // Usamos la barra invertida Unicode (U+FF3C) para evitar que ABCJS se rompa al exportar/dibujar
+    }
     // CAMBIO 2: Si el bajo está en silencio, usar la voz grave más baja disponible
     let bassNote = chord.bass;
     let bajoEsRest = false;
@@ -6051,7 +6216,14 @@ function generarCifradoZamacois(chord, tonicVal, modeVal, prevChord = null, next
     const chordParaCifrado = bajoEsRest
         ? { ...chord, bass: bassNote }  // usamos la voz grave como bajo para la identificación
         : chord;
-    const res = identifyingChord(chordParaCifrado, bassNote, true);
+    // Para acordes de RETARDO: usamos el resultado pre-identificado (acorde sin la nota retardada)
+    // para que no aparezca como "desconocido" y el cifrado sea coherente con la armonía subyacente.
+    let res;
+    if (retardoInfo && retardoInfo.tipo === 'retardo') {
+        res = retardoInfo.res;
+    } else {
+        res = identifyingChord(chordParaCifrado, bassNote, true);
+    }
     
     // Flags de tipo de acorde
     const tipo = res.tipo || "";
@@ -6145,9 +6317,16 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
     voices.forEach(v => {
         const note = chord[v];
         if (!note) return;
-        if (note.pitchClass === bassNote.pitchClass) return;
-        if (uniquePCs.has(note.pitchClass)) return; 
-        uniquePCs.add(note.pitchClass);
+
+        // ¿Es esta voz la que lleva el retardo (nota suspendida)?
+        const esVozRetardo = !!(retardoInfo && retardoInfo.tipo === 'retardo' &&
+                               retardoInfo.vocesRetardo && retardoInfo.vocesRetardo.includes(v));
+
+        // Saltar notas con el mismo PC que el bajo (octavas/unísonos), EXCEPTO si son retardo
+        if (note.pitchClass === bassNote.pitchClass && !esVozRetardo) return;
+        // Evitar duplicar PCs ya procesados, EXCEPTO si son retardo
+        if (uniquePCs.has(note.pitchClass) && !esVozRetardo) return;
+        if (!esVozRetardo) uniquePCs.add(note.pitchClass);
 
         const intData = calculateInterval(bassNote, note);
         if (!intData) return;
@@ -6189,19 +6368,24 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
             prefix: prefix,
             isSensible: esSensibleNota,
             isDiminished: intData.fullName.includes("Disminuida"),
-            hasAccidental: (prefix !== "")
+            hasAccidental: (prefix !== ""),
+            esVozRetardo: esVozRetardo   // retardo: siempre mostrar este intervalo
         });
     });
 
-    // 3. REGLAS DE VISIBILIDAD
+     // 3. REGLAS DE VISIBILIDAD
     let finalParts = [];
     const esDesconocido = res.error || !res.tipo || res.tipo === "Desconocido" || res.tipo.includes("Posición desconocida");
+    
+    // NUEVA LÍNEA: Detectar si hay un retardo y no está en el bajo
+    const esRetardoSuperior = retardoInfo && retardoInfo.tipo === 'retardo' && retardoInfo.vocesRetardo && !retardoInfo.vocesRetardo.includes('bass');
 
     processedIntervals.forEach(i => {
         let text = "";
         let show = false;
         
-        if (esDesconocido) {
+        // MODIFICACIÓN: Forzar visualización si es desconocido o tiene retardo superior
+        if (esDesconocido || esRetardoSuperior) {
             show = true; 
         } else {
             // --- A. REGLAS ESTÁNDAR ---
@@ -6301,6 +6485,12 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
                  if (inv === 2 && (i.num === 6 || i.num === 4)) show = true;
                  if (esResolucionDePedal && inv === 0 && i.num === 5) show = true;
             }
+
+            // ── OVERRIDE DE RETARDO ──────────────────────────────────────────────
+            // Las notas retardadas SIEMPRE se muestran en el cifrado, incluso si el
+            // tipo de acorde (ej. dominante) habría reseteado el flag 'show' a false.
+            // Esto cubre: 9-8, 4-3 sobre V7, 7-6, etc.
+            if (i.esVozRetardo) show = true;
         }
 
         // --- C. FORMATEO ---
@@ -6342,6 +6532,79 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
             finalParts.push({ num: i.num, str: text });
         }
     });
+
+    // ── INTERVALOS DE RESOLUCIÓN DE RETARDO ──────────────────────────────────
+    // Cuando el acorde actual es la resolución de un retardo del acorde anterior,
+    // añadimos explícitamente el intervalo de resolución aunque sea normalmente
+    // implícito (ej. "8" en la resolución de un retardo 9-8).
+    //
+    // Sistema español (Zamacois):
+    //   9-8 → resolución muestra "8"   (octava, aunque implícita en tríada fund.)
+    //   4-3 → resolución muestra "3"   (tercera, normalmente implícita)
+    //   7-6 → resolución muestra "6"   (sexta, normalmente implícita en 1ª inv.)
+    //   sensible retardada → resolución muestra "+" o "+N"
+    if (retardoInfo && retardoInfo.tipo === 'resolucion' && retardoInfo.vocesResolucion) {
+        retardoInfo.vocesResolucion.forEach(v => {
+            const note = chord[v];
+            if (!note || !note.baseName || note.baseName === '') return;
+
+            let resNum = null;
+            let resStr = null;
+
+            if (note.pitchClass === bassNote.pitchClass) {
+                // Mismo PC que el bajo: puede ser unísono o octava
+                const midiDiff = note.midi - bassNote.midi;
+                if (midiDiff >= 12) {
+                    // Octava (o doble octava): mostrar "8"
+                    resNum = 8;
+                    resStr = "8";
+                }
+                // Unísono (midiDiff===0): no se muestra
+            } else {
+                // PC diferente del bajo: calcular el intervalo normalmente
+                const intData = calculateInterval(bassNote, note);
+                if (!intData) return;
+                let step = intData.stepDiff % 7;
+                let num = step + 1;
+                if (inv === 0 && num === 2) num = 9;
+                resNum = num;
+
+                // Comprobar si ya aparece en finalParts (mismo número, ya mostrado)
+                if (finalParts.some(fp => fp.num === resNum)) return;
+
+                // Determinar formato: ¿es la sensible de la dominante?
+                const esResolucionSensible = (note.pitchClass === functionalSensible) && isDominantFunction;
+                if (esResolucionSensible) {
+                    resStr = (num === 3 && (inv === 0 || inv === -1)) ? "+" : "+" + num;
+                } else {
+                    // Prefijo de alteración si procede
+                    const globalTonicDOMR = document.getElementById('tonic').value;
+                    const globalModeDOMR  = document.getElementById('mode').value;
+                    const sigR = keySignatures[globalModeDOMR][globalTonicDOMR] || {};
+                    const expAccR  = sigR[note.baseName] || "";
+                    const realAccR = note.realAcc || (note.userAcc === 'n' ? '' : note.userAcc) || "";
+                    let prefR = "";
+                    if (realAccR !== expAccR) {
+                        if (realAccR === "") prefR = "♮";
+                        else prefR = realAccR.replace("##","x").replace("bb","bb").replace("#","♯").replace("b","♭");
+                        if (note.userAcc === 'n') prefR = "♮";
+                    }
+                    if ((num === 7 || num === 5) && intData.fullName.includes("Disminuida")) {
+                        resStr = "-" + num + "-";
+                    } else if (num === 3 && prefR) {
+                        resStr = prefR;
+                    } else {
+                        resStr = prefR + num;
+                    }
+                }
+            }
+
+            // Añadir solo si no existe ya un elemento con ese número en finalParts
+            if (resNum && resStr && !finalParts.some(fp => fp.num === resNum)) {
+                finalParts.push({ num: resNum, str: resStr });
+            }
+        });
+    }
 
     finalParts.sort((a, b) => b.num - a.num);
     return finalParts.map(item => item.str).join("|"); 
@@ -7651,9 +7914,22 @@ K:${tVal}${mVal === 'minor' ? 'm' : ''}
                 }
                 
                 let cifradoStr = "";
-                if (cipherMode === 'baroque') {
-                    cifradoStr = generarCifradoZamacois(currentChordObj, tVal, mVal, prevChordObj, nextChordObj);
-                } 
+if (cipherMode === 'baroque') {
+    const tonLoc = (typeof globalTonalidadLocal !== 'undefined' && globalTonalidadLocal[i-1]) 
+                   ? globalTonalidadLocal[i-1] 
+                   : { tonic: tVal, mode: mVal };
+    
+    // Recuperar info del retardo si existe
+    let retInfo = null;
+    if (typeof globalResults !== 'undefined' && globalResults[i-1]) {
+        const r = globalResults[i-1];
+        if (r.esRetardo) retInfo = { tipo: 'retardo', vocesRetardo: r.vocesRetardo, res: r };
+        else if (r.esResolucionDeRetardo) retInfo = { tipo: 'resolucion', vocesResolucion: r.vocesResolucion };
+    }
+                   
+    cifradoStr = generarCifradoZamacois(currentChordObj, tonLoc.tonic, tonLoc.mode, prevChordObj, nextChordObj, retInfo);
+} 
+
 
                 if (cifradoStr && cifradoStr.trim() !== "") {
                     annotations = cifradoStr.split('|')
@@ -8168,7 +8444,7 @@ function drawVisualErrorLines() {
     if (!svg) return;
 
     // 1. Limpiar TODAS las marcas visuales previas
-    const existingMarks = svg.querySelectorAll('.error-line, .error-circle, .error-cross, .error-arrow, .error-tess, .sequence-bracket');
+    const existingMarks = svg.querySelectorAll('.error-line, .error-circle, .error-cross, .error-arrow, .error-tess, .sequence-bracket, .retardo-mark');
 
     existingMarks.forEach(m => m.remove());
 
@@ -8516,6 +8792,68 @@ function drawVisualErrorLines() {
         });
     }
 
+    // 7. DIBUJAR MARCAS DE RETARDO ("R" en círculo ámbar junto a la cabeza de nota)
+    if (typeof visualRetardos !== 'undefined' && visualRetardos.length > 0) {
+        const voiceToIdxR = { 'soprano': 0, 'alto': 1, 'tenor': 2, 'bass': 3 };
+
+        visualRetardos.forEach(ret => {
+            const coords = chordVisualMap[ret.chordIdx];
+            if (!coords) return;
+
+            const vIdx = voiceToIdxR[ret.voice];
+
+            // Encontrar la cabeza de nota
+            let el = svg.querySelector(`.abcjs-v${vIdx} .abcjs-m${coords.m}.abcjs-n${coords.n} .abcjs-notehead path`);
+            if (!el) el = svg.querySelector(`.abcjs-v${vIdx} .abcjs-m${coords.m}.abcjs-n${coords.n} .abcjs-notehead`);
+            if (!el) el = svg.querySelector(`[class*="abcjs-v${vIdx}"][class*="abcjs-m${coords.m}"][class*="abcjs-n${coords.n}"]`);
+            if (!el) return;
+
+            // Coordenadas SVG de la cabeza de nota
+            const noteRect = el.getBoundingClientRect();
+            const svgRect  = svg.getBoundingClientRect();
+            const viewBox  = svg.viewBox.baseVal;
+            const vbWidth  = viewBox.width  || svg.width.baseVal.value  || svgRect.width;
+            const vbHeight = viewBox.height || svg.height.baseVal.value || svgRect.height;
+            const scaleX   = vbWidth  / svgRect.width;
+            const scaleY   = vbHeight / svgRect.height;
+            const vbX = viewBox.x || 0;
+            const vbY = viewBox.y || 0;
+
+            const cx = vbX + (noteRect.left + noteRect.width / 2 - svgRect.left) * scaleX;
+            const cy = vbY + (noteRect.top  + noteRect.height / 2 - svgRect.top)  * scaleY;
+
+            // Desplazamiento a la derecha de la cabeza de nota
+            const dx = noteRect.width  * scaleX * 0.6 + 9 * scaleX;
+            const dy = -3 * scaleY;
+            const radius = 7.5 * scaleX;
+
+            // Círculo ámbar de fondo
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', cx + dx);
+            circle.setAttribute('cy', cy + dy);
+            circle.setAttribute('r',  radius);
+            circle.setAttribute('fill', '#f59e0b');
+            circle.setAttribute('stroke', '#92400e');
+            circle.setAttribute('stroke-width', '1');
+            circle.setAttribute('opacity', '0.92');
+            circle.classList.add('retardo-mark');
+            svg.appendChild(circle);
+
+            // Letra "R"
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', cx + dx);
+            text.setAttribute('y', cy + dy + 4.5 * scaleY);
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('fill', '#1e293b');
+            text.setAttribute('font-size', `${11 * scaleX}px`);
+            text.setAttribute('font-weight', 'bold');
+            text.setAttribute('font-family', 'Georgia, serif');
+            text.textContent = 'R';
+            text.classList.add('retardo-mark');
+            svg.appendChild(text);
+        });
+    }
+
 }
 
 
@@ -8783,6 +9121,10 @@ function toggleAgrupar() {
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <span style="background:rgba(168,85,247,0.18); color:#c084fc; border:1px solid #a855f7; border-radius:4px; padding:1px 6px; font-size:0.85em; font-weight:bold;">mixtura modal</span>
                             <span><strong>Insignia morada:</strong> Acorde prestado del modo menor homónimo</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="background:#f59e0b; color:#1e293b; border:1px solid #92400e; border-radius:50%; width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; font-size:0.85em; font-weight:bold; font-family:Georgia,serif;">R</span>
+                            <span><strong>Círculo ámbar R:</strong> Nota de retardo (suspensión)</span>
                         </div>
                     </div>
                 </div>
