@@ -2743,7 +2743,7 @@ function checkDominantPedalResolution(c1, c2, res1) {
 tiposAcorde["6,4,2"] = "Semidisminuido (omit 3)";  // Si-Fa-La
 tiposAcorde["6,3,3"] = "Disminuido 7 (omit 3)";  // Si-Fa-Lab
 
-function identifyingChord(chordObj, notaBajoReferencia, checkPedal = true) {
+function identifyingChord(chordObj, notaBajoReferencia, checkPedal = true, nextChordObj = null) {
     let chordParaAnalisis = {};
     let hayNotasEstructurales = false;
 
@@ -2987,8 +2987,28 @@ function identifyingChord(chordObj, notaBajoReferencia, checkPedal = true) {
                         if (vBass !== undefined && vRoot !== undefined) {
                             const semitones = (vRoot - vBass + 12) % 12;
                             if (semitones === 7 || semitones === 11) {
-                                return {
-                                    error: false,
+                                // Validar que el bajo se mantenga en el siguiente acorde
+                                let esPedalReal = true;
+                                if (nextChordObj) {
+                                    let nextBass = nextChordObj.bass;
+                                    if (!nextBass) {
+                                        for (let v of ['tenor', 'alto', 'soprano']) {
+                                            if (nextChordObj[v] && nextChordObj[v].baseName !== "") { 
+                                                nextBass = nextChordObj[v]; 
+                                                break; 
+                                            }
+                                        }
+                                    }
+                                    if (nextBass && nextBass.pitchClass !== bajoParaAnalisis.pitchClass) {
+                                        esPedalReal = false;
+                                    } else if (!nextBass) {
+                                        esPedalReal = false; // Se rompe el pedal si todo es silencio
+                                    }
+                                }
+                                
+                                if (esPedalReal) {
+                                    return {
+                                        error: false,
                                     fundamental: upperRes.fundamental, 
                                     tipo: "Dominante sobre tónica",
                                     intervalos: upperRes.intervalos,
@@ -3004,6 +3024,7 @@ function identifyingChord(chordObj, notaBajoReferencia, checkPedal = true) {
                 }
             }
         }
+    }
     }
 
     return resultadoFinal;
@@ -4093,7 +4114,7 @@ function detectarRetardos(results, structuralChords, totalChords) {
         }
         if (!bajoRef) continue;
 
-                const resModificado = identifyingChord(chordModificado, bajoRef);
+                const resModificado = identifyingChord(chordModificado, bajoRef, true, chordSiguiente);
         
         // La resolución debe ser un acorde sólido, no otro sospechoso
         const resModificadoEsSospechoso = resModificado.error || 
@@ -4196,11 +4217,11 @@ for(let i=1; i<=totalChords; i++) {
         }
     }
     const chordIParaId = (bajoRefI && !chordI.bass) ? { ...chordI, bass: bajoRefI } : chordI;
-    const res = identifyingChord(chordIParaId, bajoRefI);
     
     // Obtener el siguiente acorde para análisis funcional
     const siguienteChord = (i < totalChords) ? structuralChords[`chord${i+1}`] : null;
-    const siguienteRes = (i < totalChords) ? results[i] : null; // Nota: results aún no está lleno aquí
+    
+    const res = identifyingChord(chordIParaId, bajoRefI, true, siguienteChord);const siguienteRes = (i < totalChords) ? results[i] : null; // Nota: results aún no está lleno aquí
     
     // Para la primera pasada, necesitamos hacer dos pasadas o guardar los resultados intermedios
     // Solución simple: hacer primero todas las identificaciones, luego las adaptaciones
@@ -6222,7 +6243,7 @@ if (retardoInfo && retardoInfo.tipo === 'retardo' && retardoInfo.vocesRetardo &&
     if (retardoInfo && retardoInfo.tipo === 'retardo') {
         res = retardoInfo.res;
     } else {
-        res = identifyingChord(chordParaCifrado, bassNote, true);
+        res = identifyingChord(chordParaCifrado, bassNote, true, nextChord);
     }
     
     // Flags de tipo de acorde
@@ -6242,9 +6263,10 @@ if (retardoInfo && retardoInfo.tipo === 'retardo' && retardoInfo.vocesRetardo &&
         else if (res.estadoTexto.includes("3ª")) inv = 3;
     }
 
-    if (prevChord && prevChord.bass) {
-        const prevRes = identifyingChord(prevChord, prevChord.bass, true);
-        if (!prevRes.error && prevRes.tipo === "Dominante sobre tónica" && bassNote.midi === prevChord.bass.midi) {
+if (prevChord && prevChord.bass) {
+        // Le pasamos el acorde actual como "siguiente" del previo
+        const prevRes = identifyingChord(prevChord, prevChord.bass, true, chordParaCifrado);
+if (!prevRes.error && prevRes.tipo === "Dominante sobre tónica" && bassNote.midi === prevChord.bass.midi) {
             esResolucionDePedal = true;
         }
     }
