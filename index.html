@@ -1078,6 +1078,7 @@ let visualLeadingTone = [];
 let visualTessitura = [];
 let visualSequences = [];
 let visualRetardos = []; // [{chordIdx: 1-based, voice: 'soprano'|..., resolvedRes: {...}}]
+let visualNotasDeAdorno = []; // [{chordIdx: 1-based, voice: 'soprano'|..., tipo: 'paso'|'floreo'}]
 let phraseSlurs = [];     // [{start: chordIdx1based, end: chordIdx1based}] — ligaduras de fraseo
 let noteTies = [];        // [{chord: chordIdx1based, voice: 'soprano'|...}] — ligaduras de nota (usuario)
 let chordVisualMap = {};
@@ -2928,6 +2929,9 @@ function identifyingChord(chordObj, notaBajoReferencia, checkPedal = true, nextC
                     else if (index === 2) {
                         if (esNovenaSinTercera) estadoTexto = "3ª Inversión (en 7ª)";
                         else if (esNovenaIncompleta) estadoTexto = "3ª Inversión (7ª en bajo)";
+                        // Para acorde de 7ª sin quinta, el índice 2 es la 7ª (no la 5ª):
+                        // pasos=[0,1,3] → ordenadas[2] = 7ª → 3ª Inversión
+                        else if (esSeptimaSinQuinta) estadoTexto = "3ª Inversión";
                         else estadoTexto = "2ª Inversión"; 
                     }
                     else if (index === 3) {
@@ -3438,11 +3442,17 @@ function checkHarmonicSyncopation(c1, c2, res1, res2, beat1, beat2, meter) {
     // 1. Si no son la misma armonía (misma fundamental y mismo tipo), no hay síncopa
     if (!res1 || !res2 || res1.error || res2.error) return [];
     if (res1.rootPC !== res2.rootPC) return [];
-    
+
+    // Excepción: si el acorde débil (res1) contiene notas de paso o floreo,
+    // la función armónica simplemente se prolonga mediante adorno y no constituye
+    // síncopa armónica. La misma función aparece en las tres partes: fuerte → adorno → fuerte.
+    if (res1.esNotaDeAdorno) return [];
+
     // Limpiamos el tipo para ignorar diferencias sutiles como "(omit 5)"
     const baseType = (t) => t ? t.split('(')[0].trim().replace(" (dominante)", "") : "";
     if (baseType(res1.tipo) !== baseType(res2.tipo)) return [];
-if (res2.estadoTexto && res2.estadoTexto.includes("2ª Inversión")) return [];
+    if (res2.estadoTexto && res2.estadoTexto.includes("2ª Inversión")) return [];
+
     // 2. Obtener peso métrico
     const w1 = getMetricWeight(beat1, meter);
     const w2 = getMetricWeight(beat2, meter);
@@ -3450,7 +3460,7 @@ if (res2.estadoTexto && res2.estadoTexto.includes("2ª Inversión")) return [];
     // 3. Regla: Prohibido repetir acorde de Débil a Fuerte (o de Débil a Semifuerte)
     // Es decir, si el peso del segundo es MAYOR que el del primero.
     if (w2 > w1) {
-        // Excepción: final de frase a veces permite prolongaciones, 
+        // Excepción: final de frase a veces permite prolongaciones,
         // pero la regla escolástica estricta lo prohíbe.
         return [`Síncopa Armónica: El mismo acorde se repite o prolonga de una parte débil (tiempo ${beat1}) a una más fuerte (tiempo ${beat2}).`];
     }
@@ -3717,37 +3727,73 @@ tipo.includes("Novena de Dominante")
             continue;
         }
 
-                let esInflexion = !tieneNotaDiferencial;
-        const lookaheadLimit = Math.min(results.length, i + 6);
-        
-        for (let k = i + 2; k < lookaheadLimit; k++) {
-    if (!results[k].error && results[k].rootPC === currentTonicPC) {
-        if (targetPC !== currentTonicPC) {
-            // Verifica si el acorde es inestable (ej. tiene 7ª). Si es inestable,
-            // actúa como tensión en la nueva tonalidad, no como retorno a la antigua.
-            const tipoK = (results[k].tipo || "").toLowerCase();
-            const esInestable = tipoK.includes("7") || tipoK.includes("dominante") || 
-                                tipoK.includes("novena") || tipoK.includes("disminuido") || 
-                                tipoK.includes("aumentado") || tipoK.includes("semidisminuido");
-            
-            if (!esInestable) {
-                esInflexion = true;
+        // ── CRITERIO DE INFLEXIÓN vs. DOMINANTE SECUNDARIA ──────────────────────
+        // Para ser inflexión modulante se requieren ≥3 acordes en el nuevo territorio
+        // (incluyendo la propia dominante secundaria) antes de volver a la tonalidad
+        // original. Con solo 1-2 acordes (ej. V7/V → V → I) es simplemente una
+        // dominante secundaria: el acorde "V" funciona como dominante en la tonalidad
+        // principal, no como nueva tónica, aunque superficialmente parezca I de la
+        // nueva clave. El contexto posterior determina su función real.
+        let chordsInNewTerritory = 0;
+        let foundStableReturn = false;
+        let returnChordIdx = -1; // índice 0-based del acorde de retorno (exclusivo)
+        const inflexLookahead = Math.min(results.length, i + 8);
+
+        // V7 del tono original: su raíz es (tónica + 7ª) y su característica es la 7ª menor.
+        // Cuando aparece tras una excursión, señala el retorno aunque la tónica no haya llegado.
+        const dominantRootPC    = (currentTonicPC + 7) % 12;
+        const dominantSeventhPC = (dominantRootPC + 10) % 12;
+
+        for (let k = i + 1; k < inflexLookahead; k++) {
+            const rk = results[k];
+            if (!rk || rk.error) { chordsInNewTerritory++; continue; }
+
+            const tipoK = (rk.tipo || "").toLowerCase();
+            const esInestableK = tipoK.includes("7") || tipoK.includes("dominante") ||
+                                 tipoK.includes("novena") || tipoK.includes("disminuido") ||
+                                 tipoK.includes("aumentado") || tipoK.includes("semidisminuido");
+
+            // 1. Retorno estable a la tónica original con modo coincidente:
+            //    Un acorde MENOR con root = tónica original NO es retorno si la tonalidad
+            //    original es MAYOR (ej. Cm no es retorno a DoM).
+            const modoCoincide = tonActual.mode !== 'major' ||
+                                 !tipoK.includes("menor") || tipoK.includes("mayor");
+            const esRetornoTonica = targetPC !== currentTonicPC &&
+                                    rk.rootPC === currentTonicPC &&
+                                    !esInestableK && modoCoincide;
+
+            // 2. V7 del tono original (identificado por root = dom. + séptima menor característica):
+            //    ej. Sol7 (G-B-D-F) es señal de retorno a DoM aunque todavía no llegue el DoM.
+            const chordPCsK = getChordPCsLocal(structuralChords[`chord${k + 1}`] || {});
+            const esDominantePrincipal = targetPC !== currentTonicPC &&
+                                         rk.rootPC === dominantRootPC &&
+                                         esInestableK &&
+                                         chordPCsK.includes(dominantSeventhPC);
+
+            if (esRetornoTonica || esDominantePrincipal) {
+                foundStableReturn = true;
+                returnChordIdx = k;
                 break;
             }
+            chordsInNewTerritory++;
         }
-    }
-}
 
-
-    if (esInflexion) {
-    inflexiones.push({
-        acorde: i + 1,
-        desdeTonica: tonActual.tonic,
-        haciaEsp: targetEsp // El objetivo de la dominante secundaria
-    });
-    continue;
-}
-
+        if (foundStableReturn) {
+            // ≥2 acordes entre la dominante secundaria y el retorno → inflexión real
+            if (chordsInNewTerritory >= 2) {
+                inflexiones.push({
+                    acorde: i + 1,            // 1-based: dominante secundaria (inicio)
+                    acordeFinIdx: returnChordIdx, // 0-based exclusivo: primer acorde de retorno
+                    desdeTonica: tonActual.tonic,
+                    haciaTonica: pcToEnglishTonic(targetPC, newMode) || null, // tónica destino (inglés)
+                    haciaModo:   newMode,         // modo destino ('major' | 'minor')
+                    haciaEsp:    targetEsp
+                });
+            }
+            // Con <2 acordes (dominante secundaria simple) o con inflexión confirmada,
+            // en ningún caso se trata como modulación → saltamos al siguiente acorde.
+            continue;
+        }
 
 
                 const newTonicEng = pcToEnglishTonic(targetPC, newMode);
@@ -4058,10 +4104,17 @@ function detectarRetardos(results, structuralChords, totalChords) {
             const r = results[i];
             
             // Ampliamos la detección: incluimos errores y acordes "sospechosos" (falsos positivos)
+            // NOTA: Los acordes de 7ª sin quinta ("7 (omit 5)", "m7 (omit 5)", etc.) son práctica
+            // habitual y NO se consideran sospechosos. Solo las tríadas sin quinta o los acordes
+            // sin tercera son verdaderamente incompletos y pueden enmascarar retardos.
+            const esOmitSospechoso = r && r.tipo && r.tipo.includes("omit") &&
+                (r.tipo === "Mayor (omit 5)" || r.tipo === "Menor (omit 5)" ||
+                 r.tipo.includes("omit 3"));
+
             const esSospechoso = r && (
                 r.error || 
                 (r.tipo && (
-                    r.tipo.includes("omit") || 
+                    esOmitSospechoso ||
                     r.tipo.includes("Novena") || 
                     r.estadoTexto === "Posición desconocida" ||
                     r.estadoTexto.includes("No practicable")
@@ -4169,6 +4222,153 @@ function detectarRetardos(results, structuralChords, totalChords) {
     }
 }
 
+// ================================================================
+// DETECCIÓN AUTOMÁTICA DE NOTAS DE PASO Y NOTAS DE FLOREO
+// ================================================================
+// Una nota de paso conecta dos notas armónicas por grados conjuntos
+// en la misma dirección. Una nota de floreo sale por grado y regresa
+// a la misma nota. Ambas pueden aparecer en parte débil o fuerte.
+// ================================================================
+function detectarNotasDeAdorno(results, structuralChords, parsed, totalChords) {
+    visualNotasDeAdorno = []; // Reset global
+
+    for (let i = 1; i < totalChords - 1; i++) {
+        const r = results[i];
+
+        // No sobreescribir retardos ya detectados
+        if (r && r.esRetardo) continue;
+
+        // Solo procesar acordes sospechosos (no identificados o con problemas)
+        // Los acordes de 7ª sin quinta son práctica habitual y no se consideran sospechosos.
+        const esOmitSospechoso = r && r.tipo && r.tipo.includes("omit") &&
+            (r.tipo === "Mayor (omit 5)" || r.tipo === "Menor (omit 5)" ||
+             r.tipo.includes("omit 3"));
+
+        const esSospechoso = r && (
+            r.error ||
+            (r.tipo && (
+                esOmitSospechoso ||
+                r.tipo.includes("Novena") ||
+                r.estadoTexto === "Posición desconocida" ||
+                r.estadoTexto.includes("No practicable")
+            ))
+        );
+
+        if (!r || !esSospechoso || r.insuficiente) continue;
+
+        // Necesitamos acorde anterior y siguiente
+        const chordNum = i + 1; // 1-based
+        const chordPrev = parsed[`chord${chordNum - 1}`];
+        const chordCurr = parsed[`chord${chordNum}`];
+        const chordNext = parsed[`chord${chordNum + 1}`];
+
+        if (!chordPrev || !chordCurr || !chordNext) continue;
+
+        const vocesNotaDePaso = [];
+        const vocesFloreo = [];
+
+        ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
+            const nPrev = chordPrev[v];
+            const nCurr = chordCurr[v];
+            const nNext = chordNext[v];
+
+            if (!nPrev || !nCurr || !nNext) return;
+            if (!nPrev.baseName || !nCurr.baseName || !nNext.baseName) return;
+            if (nPrev.baseName === '' || nCurr.baseName === '' || nNext.baseName === '') return;
+
+            const diffIn  = nCurr.midi - nPrev.midi;
+            const diffOut = nNext.midi - nCurr.midi;
+
+            // La nota debe moverse al entrar (no puede ser una nota retenida = retardo)
+            if (Math.abs(diffIn) === 0) return;
+            // Ambos movimientos deben ser por grados conjuntos (máx. 2 semitonos)
+            if (Math.abs(diffIn) > 2 || Math.abs(diffOut) > 2) return;
+
+            // NOTA DE PASO: misma dirección y la nota se sitúa "entre" las dos armónicas
+            if (diffIn !== 0 && diffOut !== 0 && Math.sign(diffIn) === Math.sign(diffOut)) {
+                const minMidi = Math.min(nPrev.midi, nNext.midi);
+                const maxMidi = Math.max(nPrev.midi, nNext.midi);
+                if (nCurr.midi > minMidi && nCurr.midi < maxMidi) {
+                    vocesNotaDePaso.push(v);
+                }
+            }
+            // NOTA DE FLOREO: la voz sale por grado y regresa a la misma altura (o misma PC)
+            else if (diffIn !== 0 && diffOut !== 0 &&
+                     nNext.pitchClass === nPrev.pitchClass && nNext.midi === nPrev.midi) {
+                vocesFloreo.push(v);
+            }
+        });
+
+        const vocesAdorno = [...new Set([...vocesNotaDePaso, ...vocesFloreo])];
+        if (vocesAdorno.length === 0) continue;
+
+        // --- Sustituir voces adornadas por la nota del acorde anterior y reidentificar ---
+        const chordModificado = {
+            soprano: chordCurr.soprano,
+            alto:    chordCurr.alto,
+            tenor:   chordCurr.tenor,
+            bass:    chordCurr.bass
+        };
+        vocesAdorno.forEach(v => {
+            chordModificado[v] = chordPrev[v];
+        });
+
+        let bajoRef = chordModificado.bass;
+        if (!bajoRef || !bajoRef.baseName || bajoRef.baseName === '') {
+            for (const vv of ['tenor', 'alto', 'soprano']) {
+                if (chordModificado[vv] && chordModificado[vv].baseName && chordModificado[vv].baseName !== '') {
+                    bajoRef = chordModificado[vv]; break;
+                }
+            }
+        }
+        if (!bajoRef) continue;
+
+        let resModificado = identifyingChord(chordModificado, bajoRef, true, chordNext);
+
+        // Si con la nota del acorde anterior no funciona, probar con la del siguiente
+        if (resModificado.error || resModificado.estadoTexto === "Posición desconocida") {
+            const chordMod2 = { ...chordModificado };
+            vocesAdorno.forEach(v => { chordMod2[v] = chordNext[v]; });
+            let bajoRef2 = chordMod2.bass;
+            if (!bajoRef2 || !bajoRef2.baseName || bajoRef2.baseName === '') {
+                for (const vv of ['tenor', 'alto', 'soprano']) {
+                    if (chordMod2[vv] && chordMod2[vv].baseName && chordMod2[vv].baseName !== '') {
+                        bajoRef2 = chordMod2[vv]; break;
+                    }
+                }
+            }
+            if (bajoRef2) {
+                const res2 = identifyingChord(chordMod2, bajoRef2, true, chordNext);
+                if (!res2.error && res2.estadoTexto !== "Posición desconocida") {
+                    resModificado = res2;
+                }
+            }
+        }
+
+        // Verificar que la sustitución produce un acorde válido
+        const resEsSospechoso = resModificado.error ||
+            (resModificado.tipo && (
+                resModificado.tipo.includes("Novena de Sensible") ||
+                resModificado.estadoTexto === "Posición desconocida" ||
+                resModificado.estadoTexto.includes("No practicable")
+            ));
+        if (resEsSospechoso || resModificado.insuficiente) continue;
+
+        // ¡NOTA DE ADORNO CONFIRMADA!
+        results[i] = Object.assign({}, resModificado, {
+            esNotaDeAdorno:  true,
+            vocesNotaDePaso: vocesNotaDePaso,
+            vocesFloreo:     vocesFloreo
+        });
+
+        // Registrar para marcadores visuales
+        vocesAdorno.forEach(v => {
+            const tipo = vocesNotaDePaso.includes(v) ? 'paso' : 'floreo';
+            visualNotasDeAdorno.push({ chordIdx: chordNum, voice: v, tipo });
+        });
+    }
+}
+
 function analyzeHarmony() {
 visualErrorState = [];
 visualMelodicLeaps = [];
@@ -4176,6 +4376,7 @@ visualCrossings = [];
 visualLeadingTone = [];
 visualTessitura = [];
 visualSequences = [];
+visualNotasDeAdorno = [];
 
 document.querySelector('.piano-wrapper').classList.add('piano-hidden');
 
@@ -4252,6 +4453,12 @@ for(let i=1; i<=totalChords; i++) {
 // si contienen retardos. Si se confirman, se actualiza results[i] para que
 // las pasadas posteriores (adaptaciones, modulaciones) los traten como acordes normales.
 detectarRetardos(results, structuralChords, totalChords);
+
+// ── DETECCIÓN DE NOTAS DE PASO Y FLOREO ──────────────────────────────────
+// Tras los retardos, buscamos acordes sospechosos que sean notas ornamentales
+// (paso o floreo). Si se confirman, se actualizan results[i] de igual forma.
+detectarNotasDeAdorno(results, structuralChords, parsed, totalChords);
+
 globalResults = results;
 
 // Segunda pasada para adaptaciones con contexto
@@ -4319,7 +4526,22 @@ for(let i=0; i<totalChords; i++) {
 
 globalTonalidadLocal = tonalidadLocal;
 
-        // --- DETECCIÓN DE MIXTURA MODAL ---
+        // --- APLICAR TONALIDAD LOCAL A RANGOS DE INFLEXIÓN ---
+        // Para modulaciones, detectarModulaciones ya actualiza tonalidadLocal.
+        // Para inflexiones, la tonalidad original se mantiene pero los grados
+        // deben referenciarse a la nueva tónica. Actualizamos tonalidadLocal para
+        // que el cálculo de grados, la mixtura modal y el cifrado sean coherentes.
+        inflexiones.forEach(inf => {
+            if (!inf.haciaTonica) return;
+            const desde = inf.acorde - 1;       // 0-based: empieza en la dominante secundaria
+            const hasta = (inf.acordeFinIdx !== undefined) ? inf.acordeFinIdx : desde + 4;
+            for (let j = desde; j < hasta && j < totalChords; j++) {
+                tonalidadLocal[j] = { tonic: inf.haciaTonica, mode: inf.haciaModo };
+            }
+        });
+        // Nota: globalTonalidadLocal apunta al mismo array, por lo que ya refleja los cambios.
+
+
         const minorOnlyIntervals = [3, 8, 10]; // b3, b6, b7
         const mixturaModal = new Array(totalChords).fill(false);
         for (let i = 0; i < totalChords; i++) {
@@ -4346,6 +4568,20 @@ globalTonalidadLocal = tonalidadLocal;
                 return n && n.pitchClass !== undefined && minorOnlyPCs.includes(parseInt(n.pitchClass, 10));
             });
         }
+
+        // --- PRIORIDAD DE INFLEXIONES SOBRE MIXTURA MODAL ---
+        // Si un acorde pertenece al rango de una inflexión modulante confirmada,
+        // sus notas "extrañas" pertenecen a la nueva tonalidad (no son préstamos
+        // del modo paralelo), por lo que no debe etiquetarse como mixtura modal.
+        // Lo mismo aplica para modulaciones: tonalidadLocal ya cambia de modo,
+        // así que el bucle anterior ya las excluye automáticamente.
+        inflexiones.forEach(inf => {
+            const desde = inf.acorde - 1; // 0-based: dominante secundaria que inicia la inflexión
+            const hasta = (inf.acordeFinIdx !== undefined) ? inf.acordeFinIdx : desde + 4;
+            for (let j = desde; j < hasta && j < totalChords; j++) {
+                mixturaModal[j] = false;
+            }
+        });
 
         // --- TERCERA PASADA: recalcular grados con tonalidad local ---
         for (let i = 0; i < totalChords; i++) {
@@ -4761,6 +4997,46 @@ infos.push(...parRes.infos.map(x => `${label}: ${x}`));
                         }
                     }
 
+                    // --- QUINTAS/OCTAVAS ENCUBIERTAS POR NOTA DE PASO/FLOREO ---
+                    // Si el acorde SIGUIENTE es una nota de adorno, la voz ornamental
+                    // crea movimiento oblicuo que enmascara posibles paralelas entre
+                    // el acorde actual (C1) y el armónico siguiente (C3). Verificamos
+                    // la progresión C1→C3 directamente para detectar paralelas ocultas.
+                    if (nextRes.esNotaDeAdorno && (i + 2) < totalChords) {
+                        const armonicoSig = parsed[`chord${chordNum + 2}`];
+                        if (armonicoSig) {
+                            const nextRaw_hip = {
+                                soprano: nextRaw.soprano,
+                                alto:    nextRaw.alto,
+                                tenor:   nextRaw.tenor,
+                                bass:    nextRaw.bass
+                            };
+                            const todasVocesAdorno = [
+                                ...(nextRes.vocesNotaDePaso || []),
+                                ...(nextRes.vocesFloreo    || [])
+                            ];
+                            todasVocesAdorno.forEach(v => {
+                                if (armonicoSig[v] && armonicoSig[v].baseName && armonicoSig[v].baseName !== '') {
+                                    nextRaw_hip[v] = armonicoSig[v];
+                                }
+                            });
+                            const resArmonSig = results[i + 2] && !results[i + 2].error ? results[i + 2] : nextRes;
+                            const parResAdorno = checkParallelsStrict(
+                                currentRaw, nextRaw_hip,
+                                currentRes, resArmonSig,
+                                chordNum, localTonic, localMode
+                            );
+                            const tipoAdorno = (nextRes.vocesNotaDePaso && nextRes.vocesNotaDePaso.length > 0)
+                                ? 'nota de paso' : 'floreo';
+                            errors.push(...parResAdorno.errors.map(x =>
+                                `${label}: ${x} <em style="color:#14b8a6">(encubiertas por ${tipoAdorno})</em>`
+                            ));
+                            infos.push(...parResAdorno.infos.map(x =>
+                                `${label}: ${x} <em style="color:#14b8a6">(encubiertas por ${tipoAdorno})</em>`
+                            ));
+                        }
+                    }
+
                     warnings.push(...checkDirectIntervals(currentStructural, nextStructural, parRes.badPairs, chordNum).map(x => `${label}: ${x}`));
                     warnings.push(...checkDirectDissonance(currentStructural, nextStructural, nextRes, nextAdapt.esDominanteFuncional).map(x => `${label}: ${x}`));
 
@@ -5000,6 +5276,22 @@ const esSilencio = !['soprano', 'alto', 'tenor', 'bass'].some(v =>
                        🎵 retardo</span>`
                 : "";
 
+            // Badge de nota de paso / floreo
+            const tieneNP = r.esNotaDeAdorno && r.vocesNotaDePaso && r.vocesNotaDePaso.length > 0;
+            const tieneF  = r.esNotaDeAdorno && r.vocesFloreo     && r.vocesFloreo.length > 0;
+            const adornoVoces = [...(r.vocesNotaDePaso||[]), ...(r.vocesFloreo||[])];
+            const adornoLabel = tieneNP && tieneF ? 'N.Paso / Floreo'
+                              : tieneNP           ? 'Nota de Paso'
+                              : tieneF            ? 'Floreo'
+                              : '';
+            const adornoBadge = r.esNotaDeAdorno
+                ? `<span title="${adornoLabel} en: ${adornoVoces.map(v=>({soprano:'Soprano',alto:'Contralto',tenor:'Tenor',bass:'Bajo'}[v])).join(', ')}"
+                         style="background:rgba(20,184,166,0.18); color:#14b8a6; border:1px solid #0d9488;
+                                border-radius:4px; padding:1px 6px; font-size:0.78em; margin-left:6px;
+                                font-weight:bold; cursor:default; letter-spacing:0.03em;">
+                       🎶 ${adornoLabel}</span>`
+                : "";
+
             const currentChord = structuralChords[`chord${i+1}`];
 const nextChordData = (i < totalChords - 1) ? structuralChords[`chord${i+2}`] : null;
             const tEl = document.getElementById('tonic');
@@ -5099,7 +5391,7 @@ if (adapt.esDominanteFuncional) {
                 <span>🎵</span>
                 <div>
                     <strong>Acorde ${i+1}:</strong> 
-                    ${gradoStr}${r.fundamental} ${tipoCorto}${infoDominante}${estadoHtml}${mixturaBadge}${retardoBadge}${tonLabel}${badgeSilencios}
+                    ${gradoStr}${r.fundamental} ${tipoCorto}${infoDominante}${estadoHtml}${mixturaBadge}${retardoBadge}${adornoBadge}${tonLabel}${badgeSilencios}
                     <span style="display:inline-block; margin-left:8px; padding:2px 6px; background:#475569; border-radius:4px; color:#fcd34d; font-family:monospace; font-weight:bold;">
                         ${cifrado}
                     </span>
@@ -5119,7 +5411,10 @@ if (adapt.esDominanteFuncional) {
         });
 inflexiones.forEach(inf => {
     const tonOriginal = tonicLabels[inf.desdeTonica] || inf.desdeTonica;
-    infos.push(`🎼 <strong>Inflexión modulante</strong> (Acorde ${inf.acorde}): Actúa como dominante pasajera de ${inf.haciaEsp}, pero regresa a la tonalidad de ${tonOriginal}.`);
+    const tonDestino  = inf.haciaEsp || inf.haciaTonica || '?';
+    const modoStr     = inf.haciaModo === 'minor' ? ' menor' : ' mayor';
+    const acordeFin   = (inf.acordeFinIdx !== undefined) ? inf.acordeFinIdx : inf.acorde + 2;
+    infos.push(`🎼 <strong>Inflexión modulante</strong> (Acordes ${inf.acorde}–${acordeFin}): Excursión a ${tonDestino}${modoStr}, con grados referenciados a esa tonalidad, antes de regresar a ${tonOriginal}.`);
 });
         if (errors.length) errors.forEach(e => html += `<div class="error-item error-critical"><span>❌</span><div>${e}</div></div>`);
         if (warnings.length) warnings.forEach(w => html += `<div class="error-item error-warning"><span>⚠️</span><div>${w}</div></div>`);
@@ -6593,7 +6888,7 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
                     if (i.num === 6 && i.isSensible) show = true; // Forzamos +6
                 }
                 else if (inv === 3) { 
-                    if (i.num === 4 ) show = true; // Forzamos +4 
+                    if (i.num === 4) show = true; // V4/2: solo +4 (el 2 queda implícito)
                 } 
             }
 
@@ -8642,7 +8937,7 @@ function drawVisualErrorLines() {
     if (!svg) return;
 
     // 1. Limpiar TODAS las marcas visuales previas
-    const existingMarks = svg.querySelectorAll('.error-line, .error-circle, .error-cross, .error-arrow, .error-tess, .sequence-bracket, .retardo-mark');
+    const existingMarks = svg.querySelectorAll('.error-line, .error-circle, .error-cross, .error-arrow, .error-tess, .sequence-bracket, .retardo-mark, .adorno-mark');
 
     existingMarks.forEach(m => m.remove());
 
@@ -9052,6 +9347,67 @@ function drawVisualErrorLines() {
         });
     }
 
+    // 8. DIBUJAR MARCAS DE NOTA DE PASO / FLOREO ("NP" o "F" en círculo teal)
+    if (typeof visualNotasDeAdorno !== 'undefined' && visualNotasDeAdorno.length > 0) {
+        const voiceToIdxA = { 'soprano': 0, 'alto': 1, 'tenor': 2, 'bass': 3 };
+
+        visualNotasDeAdorno.forEach(adorno => {
+            const coords = chordVisualMap[adorno.chordIdx];
+            if (!coords) return;
+
+            const vIdx = voiceToIdxA[adorno.voice];
+
+            let el = svg.querySelector(`.abcjs-v${vIdx} .abcjs-m${coords.m}.abcjs-n${coords.n} .abcjs-notehead path`);
+            if (!el) el = svg.querySelector(`.abcjs-v${vIdx} .abcjs-m${coords.m}.abcjs-n${coords.n} .abcjs-notehead`);
+            if (!el) el = svg.querySelector(`[class*="abcjs-v${vIdx}"][class*="abcjs-m${coords.m}"][class*="abcjs-n${coords.n}"]`);
+            if (!el) return;
+
+            const noteRect = el.getBoundingClientRect();
+            const svgRect  = svg.getBoundingClientRect();
+            const viewBox  = svg.viewBox.baseVal;
+            const vbWidth  = viewBox.width  || svg.width.baseVal.value  || svgRect.width;
+            const vbHeight = viewBox.height || svg.height.baseVal.value || svgRect.height;
+            const scaleX   = vbWidth  / svgRect.width;
+            const scaleY   = vbHeight / svgRect.height;
+            const vbX = viewBox.x || 0;
+            const vbY = viewBox.y || 0;
+
+            const cx = vbX + (noteRect.left + noteRect.width / 2 - svgRect.left) * scaleX;
+            const cy = vbY + (noteRect.top  + noteRect.height / 2 - svgRect.top)  * scaleY;
+
+            // Desplazar a la derecha (y un poco más que el R para no solapar si hay retardo)
+            const dx = noteRect.width * scaleX * 0.6 + 9 * scaleX;
+            const dy = -3 * scaleY;
+            const radius = 7.5 * scaleX;
+            const label = adorno.tipo === 'paso' ? 'NP' : 'F';
+            const fillColor   = adorno.tipo === 'paso' ? '#14b8a6' : '#06b6d4';
+            const strokeColor = adorno.tipo === 'paso' ? '#0d9488' : '#0891b2';
+
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', cx + dx);
+            circle.setAttribute('cy', cy + dy);
+            circle.setAttribute('r',  radius);
+            circle.setAttribute('fill', fillColor);
+            circle.setAttribute('stroke', strokeColor);
+            circle.setAttribute('stroke-width', '1');
+            circle.setAttribute('opacity', '0.92');
+            circle.classList.add('adorno-mark');
+            svg.appendChild(circle);
+
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', cx + dx);
+            text.setAttribute('y', cy + dy + 4 * scaleY);
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('fill', '#ffffff');
+            text.setAttribute('font-size', `${label === 'NP' ? 8 * scaleX : 11 * scaleX}px`);
+            text.setAttribute('font-weight', 'bold');
+            text.setAttribute('font-family', 'Georgia, serif');
+            text.textContent = label;
+            text.classList.add('adorno-mark');
+            svg.appendChild(text);
+        });
+    }
+
 }
 
 
@@ -9241,7 +9597,7 @@ function toggleAgrupar() {
                         <li style="margin-bottom: 8px;">🎹 <strong>Piano:</strong> Clic en las teclas. Detecta la octava según la voz.</li>
                         <li style="margin-bottom: 8px;">⌨️ <strong>Teclado PC:</strong> Usa <strong style="color:#fff">A, B, C, D, E, F, G</strong> para entrada rápida.</li>
                         <li style="margin-bottom: 8px;">🖱️ <strong>Arrastrar:</strong> Clic sobre una nota y <strong style="color:#fff">arrastra arriba/abajo</strong> para cambiar su altura por semitonos.</li>
-                        <li style="margin-bottom: 8px;">✨ <strong>Notas de Adorno:</strong> Activa el modo Adorno para que el analizador ignore armónicamente notas de paso o floreos.</li>
+                        <li style="margin-bottom: 8px;">✨ <strong>Notas de Adorno:</strong> El analizador detecta <strong>automáticamente</strong> las notas de paso (NP) y floreos (F) por grados conjuntos, aplicándoles las mismas verificaciones que a los retardos. También puedes activar el modo Adorno manual para forzar que una nota sea ignorada armónicamente.</li>
                     </ul>
                 </div>
                 <div>
@@ -9327,6 +9683,18 @@ function toggleAgrupar() {
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <em style="color:#fbbf24; font-size:0.85em;">(encubiertas por retardo)</em>
                             <span><strong>Aviso ámbar:</strong> 5ª/8ª paralelas que el retardo encubre (igualmente incorrectas)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="background:#14b8a6; color:#fff; border:1px solid #0d9488; border-radius:50%; width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; font-size:0.7em; font-weight:bold; font-family:Georgia,serif;">NP</span>
+                            <span><strong>Círculo teal NP:</strong> Nota de paso (detectada automáticamente)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="background:#06b6d4; color:#fff; border:1px solid #0891b2; border-radius:50%; width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; font-size:0.85em; font-weight:bold; font-family:Georgia,serif;">F</span>
+                            <span><strong>Círculo cian F:</strong> Nota de floreo (detectada automáticamente)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <em style="color:#14b8a6; font-size:0.85em;">(encubiertas por nota de paso)</em>
+                            <span><strong>Aviso teal:</strong> 5ª/8ª paralelas que la nota de paso encubre (igualmente incorrectas)</span>
                         </div>
                     </div>
                 </div>
