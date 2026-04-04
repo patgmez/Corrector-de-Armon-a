@@ -248,21 +248,21 @@
         .voice-selector, .acc-selector { display: flex; gap: 4px; }
         .p-btn {
             background: #1e293b; color: #cbd5e1; border: 1px solid #475569;
-            width: 36px; height: 36px; border-radius: 6px; 
+            width: 35px; height: 36px; border-radius: 6px; 
             cursor: pointer; font-weight: bold; font-size: 0.9rem;
             display: flex; align-items: center; justify-content: center;
         }
         .p-btn.active { background: #3b82f6; color: white; border-color: #2563eb; }
         .nav-btn {
             background: #334155; color: #94a3b8; border: 1px solid #475569;
-            width: 32px; height: 32px; border-radius: 50%;
+            width: 26px; height: 32px; border-radius: 50%;
             display: flex; align-items: center; justify-content: center;
             cursor: pointer; font-size: 0.7rem; margin: 0 2px;
         }
         .nav-btn:active { background: #475569; color: white; }
         .enharmonic-btn {
             background: #f59e0b; color: #1e293b; border: none;
-            width: 36px; height: 36px; border-radius: 50%; 
+            width: 26px; height: 36px; border-radius: 50%; 
             font-size: 1.1rem; font-weight: bold; cursor: pointer;
             box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
         }
@@ -738,6 +738,7 @@
         <button class="p-btn" onclick="handleValueChange('1')" title="Negra" style="font-size: 1.2rem;">𝅘𝅥</button>
         <button class="p-btn" onclick="handleValueChange('0.5')" title="Corchea" style="font-size: 1.2rem;">𝅘𝅥𝅮</button>
         <button class="p-btn" onclick="handleValueChange('REST')" title="Silencio" style="color: #fca5a5; font-size: 1.2rem;">𝄽</button>
+        <button class="p-btn" id="btn-tie" onclick="toggleTie()" title="Ligar nota con la siguiente (misma voz)" style="font-size: 1.1rem; letter-spacing:-1px;">⌢</button>
                 <button class="nav-btn" onclick="cycleChord(-1)">◀</button>
                 <button class="nav-btn" onclick="cycleVoice(-1)">▲</button>
                 <button class="nav-btn" onclick="cycleVoice(1)">▼</button>
@@ -882,6 +883,7 @@ const state = {
     meter: currentMeter,
     firstBarlineIndex: firstBarlineIndex,
     phraseSlurs: phraseSlurs.slice(),
+    noteTies: noteTies.slice(),
     durations: {...chordDurations},
     isGrouped: typeof isGrouped !== 'undefined' ? isGrouped : false, // Añadir esta línea
     inputs: {} 
@@ -1077,6 +1079,7 @@ let visualTessitura = [];
 let visualSequences = [];
 let visualRetardos = []; // [{chordIdx: 1-based, voice: 'soprano'|..., resolvedRes: {...}}]
 let phraseSlurs = [];     // [{start: chordIdx1based, end: chordIdx1based}] — ligaduras de fraseo
+let noteTies = [];        // [{chord: chordIdx1based, voice: 'soprano'|...}] — ligaduras de nota (usuario)
 let chordVisualMap = {};
 let isEarTrainingMode = false;
 let isGrouped = false;
@@ -1377,6 +1380,9 @@ function insertChordAfterActive() {
     // 4. Ajustar firstBarlineIndex si cae después del punto de inserción
     if (firstBarlineIndex > activeChord) firstBarlineIndex++;
 
+    // 4b. Ajustar noteTies: desplazar índices de acorde >= insertAt
+    noteTies = noteTies.map(t => t.chord >= insertAt ? { ...t, chord: t.chord + 1 } : t);
+
     // 5. Mover la selección al nuevo silencio y actualizar
     activeChord = insertAt;
     updateStatusDisplay();
@@ -1387,11 +1393,14 @@ function insertChordAfterActive() {
 
 function removeLastChord() { 
     if(totalChords>1) { 
+        const removedChord = totalChords;
         totalChords--; 
         if(activeChord>totalChords) activeChord=totalChords; 
         if(totalChords < firstBarlineIndex) {
     firstBarlineIndex = 0;
 }
+        // Eliminar ties que apuntan al acorde borrado
+        noteTies = noteTies.filter(t => t.chord !== removedChord);
 updateBarlineButton();
         saveState(); 
         updateStatusDisplay(); 
@@ -1412,6 +1421,7 @@ function resetScore() {
     setNoteData('bass','1','C','',3);
     firstBarlineIndex = 0;
     phraseSlurs = [];
+    noteTies = [];
 updateBarlineButton();
     while(historyStack.length > 0) historyStack.pop(); 
     historyIndex = -1; 
@@ -1430,6 +1440,7 @@ function saveState() {
         meter: currentMeter,
         firstBarlineIndex: firstBarlineIndex,
         phraseSlurs: phraseSlurs.slice(),
+        noteTies: noteTies.slice(),
         durations: {...chordDurations},
         isGrouped: typeof isGrouped !== 'undefined' ? isGrouped : false, // <--- AÑADE ESTA LÍNEA
         inputs: {} 
@@ -1475,6 +1486,7 @@ for(let i=1; i<=totalChords; i++) {
     updateTonalityInfo(); 
     firstBarlineIndex = s.firstBarlineIndex || 0;
     phraseSlurs = (s.phraseSlurs && Array.isArray(s.phraseSlurs)) ? s.phraseSlurs : [];
+    noteTies = (s.noteTies && Array.isArray(s.noteTies)) ? s.noteTies : [];
 updateBarlineButton();
 if (s.isGrouped !== undefined && s.isGrouped !== isGrouped) {
     toggleAgrupar(); // Restaura el estado visual y del botón
@@ -5275,7 +5287,42 @@ function updateStatusDisplay() {
         // Muestra ej: "Destacar Tenor"
         lblDestacar.textContent = `${vNames[activeVoice] || activeVoice}`; 
     }
+    updateTieButton();
 }
+
+// ── LIGADURAS DE NOTA (TIES) ─────────────────────────────────────────────────
+// noteTies = [{chord, voice}]  →  ligar nota en 'chord' con la siguiente de la misma voz.
+// Solo afectan al rendering ABC (añaden '-'); el análisis armónico no las lee.
+
+function toggleTie() {
+    const idx = noteTies.findIndex(t => t.chord === activeChord && t.voice === activeVoice);
+    if (idx >= 0) {
+        noteTies.splice(idx, 1);          // Quitar tie existente
+    } else {
+        if (activeChord >= totalChords) { // No tiene sentido ligar el último acorde
+            alert("No se puede ligar el último acorde (no hay nota siguiente en esta voz).");
+            return;
+        }
+        noteTies.push({ chord: activeChord, voice: activeVoice });
+    }
+    updateTieButton();
+    saveState();
+    renderScore();
+}
+
+function updateTieButton() {
+    const btn = document.getElementById('btn-tie');
+    if (!btn) return;
+    const hasTie = noteTies.some(t => t.chord === activeChord && t.voice === activeVoice);
+    if (hasTie) {
+        btn.classList.add('active');
+        btn.title = "Quitar ligadura de esta nota";
+    } else {
+        btn.classList.remove('active');
+        btn.title = "Ligar nota con la siguiente (misma voz)";
+    }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function updateTonalityInfo() { 
     document.getElementById('tonality-info').textContent = 
@@ -5909,7 +5956,10 @@ if (cipherMode === 'baroque') {
                 if (p.octave === 3) n += ",";
                 if (p.octave === 5) n = n.toLowerCase();
                 if (p.octave === 6) n = n.toLowerCase() + "'";
-                noteStr = numbering + annotations + slurOpen + prefix + acc + n + durStr + (addTie ? "-" : "") + slurClose;
+                // Tie de agrupado (addTie) O tie manual del usuario (noteTies)
+                // El tie de usuario solo se aplica si el acorde no fue fusionado hacia adelante
+                const hasUserTie = (nextI === i + 1) && noteTies.some(t => t.chord === i && t.voice === vId);
+                noteStr = numbering + annotations + slurOpen + prefix + acc + n + durStr + (addTie || hasUserTie ? "-" : "") + slurClose;
             }
 
             str += noteStr;
@@ -6030,7 +6080,7 @@ const chordsPerMeasure = (parseInt(parts[0]) / parseInt(parts[1])) * 4;
                 if(btnPiano) btnPiano.classList.add('active-toggle');
                 activeVoice = ['soprano','alto','tenor','bass'][vIdx]; 
                 activeChord = foundChord;
-                updateStatusDisplay(); selectCurrentNote();
+                updateStatusDisplay(); selectCurrentNote(); updateTieButton();
                 const currentNote = getCombinedNote(activeVoice, activeChord);
                 if (currentNote) {
                     const p = parseNoteForAnalysis(currentNote);
@@ -6046,7 +6096,7 @@ const chordsPerMeasure = (parseInt(parts[0]) / parseInt(parts[1])) * 4;
                     scoreContainer.scrollLeft = prevScroll;
                 }
             }
-            setTimeout(() => { selectCurrentNote(); updateScrollIndicators(); initNoteDragging();}, 100);
+            setTimeout(() => { selectCurrentNote(); updateScrollIndicators(); initNoteDragging(); updateTieButton(); }, 100);
         }
     });
 }
