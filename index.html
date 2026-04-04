@@ -568,6 +568,7 @@
         <option value="4/4">4/4</option>
         <option value="3/4">3/4</option>
         <option value="2/4">2/4</option>
+           <option value="3/8">3/8</option>
         <option value="6/8">6/8</option>
         <option value="9/8">9/8</option>
         <option value="12/8">12/8</option>
@@ -1170,15 +1171,21 @@ function updateBarlineButton() {
     const item = document.getElementById('barline-menu-item');
     if (!item) return;
 
-    const chordsPerMeasure = parseInt(currentMeter.split('/')[0]);
+    const parts = currentMeter.split('/');
+    const measureCapacity = (parseInt(parts[0]) / parseInt(parts[1])) * 4;
 
-    // Deshabilitar item del menú si ya hay anacrusa o si se completó el compás
-    if (firstBarlineIndex > 0 || totalChords >= chordsPerMeasure) {
+    let accumulated = 0;
+    for (let i = 1; i <= totalChords; i++) {
+        accumulated += (chordDurations[i] || 1);
+    }
+
+    if (firstBarlineIndex > 0 || accumulated >= measureCapacity) {
         item.classList.add('disabled');
     } else {
         item.classList.remove('disabled');
     }
 }
+
 
 
 
@@ -5612,7 +5619,7 @@ function buildGlobalMeasureContext() {
     let activeInMeasure = {}; 
     
     const parts = currentMeter.split('/');
-    const chordsPerMeasure = parseInt(parts[0]);
+    const chordsPerMeasure = (parseInt(parts[0]) / parseInt(parts[1])) * 4;
     let beats = 0;
     
     for (let k = 1; k <= totalChords; k++) {
@@ -5652,13 +5659,11 @@ function renderScore() {
     updateBarlineButton();
     
     const parts = currentMeter.split('/');
-    const chordsPerMeasure = parseInt(parts[0]);
+    const chordsPerMeasure = (parseInt(parts[0]) / parseInt(parts[1])) * 4;
     const denom = parts[1];
     const isCompound = (denom === '8');
     
-    let noteUnit = '1/4';
-    if (denom === '8') noteUnit = '1/8';
-    else if (denom === '2') noteUnit = '1/2';
+     let noteUnit = '1/4';
 
     const tVal = document.getElementById('tonic').value;
     const mVal = document.getElementById('mode').value;
@@ -5994,7 +5999,9 @@ if (cipherMode === 'baroque') {
             }
             if (vIdx === null || mIdx === null || nIdx === null) return;
             
-            const chordsPerMeasure = parseInt(currentMeter.split('/')[0]);
+            const parts = currentMeter.split('/');
+const chordsPerMeasure = (parseInt(parts[0]) / parseInt(parts[1])) * 4;
+
             let foundChord = -1, currentM = 0, currentN = 0, beats = 0;
             
             for (let k = 1; k <= totalChords; k++) {
@@ -6727,19 +6734,15 @@ function parseAbcToState(abc) {
     // 1. Extraer Metadatos
     const tonicMatch = abc.match(/K:\s*([A-G][#b]?)(m?)/i);
     const meterMatch = abc.match(/M:\s*(\d+\/\d+)/i);
+    const tempoMatch = abc.match(/Q:\s*1\/4\s*=\s*(\d+)/i);
     
     if (tonicMatch) {
         document.getElementById('tonic').value = tonicMatch[1];
         document.getElementById('mode').value = (tonicMatch[2] === 'm' || tonicMatch[2] === 'min') ? 'minor' : 'major';
     }
-    if (meterMatch) {
-        currentMeter = meterMatch[1];
-        
-    }
-    const tempoMatch = abc.match(/Q:\s*1\/4\s*=\s*(\d+)/i);
-if (tempoMatch) {
-    currentTempo = parseInt(tempoMatch[1]);
-}
+    if (meterMatch) currentMeter = meterMatch[1];
+    if (tempoMatch) currentTempo = parseInt(tempoMatch[1]);
+
     // 2. Limpiar y Preparar Voces
     const voicesData = {1: '', 2: '', 3: '', 4: ''}; 
     const lines = abc.split('\n');
@@ -6749,7 +6752,6 @@ if (tempoMatch) {
         let cleanLine = line.trim();
         if (!cleanLine) return;
 
-        // Detectar voz V:1, V:2...
         const vMatch = cleanLine.match(/(?:^|\[)V:\s*(\d+)/);
         if (vMatch) {
             currentV = parseInt(vMatch[1]);
@@ -6758,27 +6760,28 @@ if (tempoMatch) {
 
         if (currentV && voicesData[currentV] !== undefined) {
             if (!cleanLine.startsWith('%') && !cleanLine.match(/^[A-Z]:/)) {
-                // Eliminar metadatos en línea (clef=..., stem=...)
                 cleanLine = cleanLine.replace(/\b[a-zA-Z]+=(".*?"|[^ \]]*)/g, '');
-                cleanLine = cleanLine.replace(/[\[\]]/g, ''); // Limpiar corchetes
-
+                cleanLine = cleanLine.replace(/[\[\]]/g, '');
                 if (cleanLine.trim()) voicesData[currentV] += cleanLine + " ";
             }
         }
     });
 
-        // 3. Parsear Notas (CORREGIDO Y CON MEMORIA DE ALTERACIONES)
+    // COMPROBACIÓN: Exigir exactamente 4 voces
+    if (!voicesData[1] || !voicesData[2] || !voicesData[3] || !voicesData[4]) {
+        alert("Error: No se puede abrir. El archivo debe contener exactamente 4 voces (V:1 a V:4).");
+        return;
+    }
+
+    // 3. Parsear Notas individualmente
     const parseVoiceNotes = (str) => {
-        // Añadimos \| a la expresión regular para detectar barras de compás
         const regex = /(".*?")?([_\^=]*)([a-gA-Gxz\|])([,']*)([\d\/]*)/g;
         const notes = [];
         let match;
-        let measureAccidentals = {}; // Guarda las alteraciones activas en el compás actual
+        let measureAccidentals = {};
 
         while ((match = regex.exec(str)) !== null) {
             let noteChar = match[3];
-
-            // Si es barra de compás, limpiamos la memoria y continuamos
             if (noteChar === '|') {
                 measureAccidentals = {};
                 continue;
@@ -6800,114 +6803,73 @@ if (tempoMatch) {
             let isRest = (noteChar === 'x' || noteChar === 'z');
 
             if (!isRest) {
-                // Identificador único de la nota en su octava exacta (ej. "C", "c'", "B,")
                 let noteId = noteChar + (match[4] || ""); 
-
-                if (acc !== "") {
-                    // Si el usuario escribe la alteración explícitamente, se guarda en memoria
-                    measureAccidentals[noteId] = acc;
-                } else if (measureAccidentals[noteId]) {
-                    // Si no la escribe, pero está activa en el compás, se recupera
-                    acc = measureAccidentals[noteId];
-                }
+                if (acc !== "") measureAccidentals[noteId] = acc;
+                else if (measureAccidentals[noteId]) acc = measureAccidentals[noteId];
             }
 
             notes.push({
                 ornament: match[1] || "",
                 acc: acc,
                 note: noteChar,
-                octMod: match[4], 
-                dur: Math.ceil(dur)
+                octMod: match[4] || "", 
+                dur: Math.round(dur * 100) / 100 // Evitar decimales infinitos
             });
         }
         return notes;
     };
 
+    const parsedVoices = {
+        soprano: parseVoiceNotes(voicesData[1]),
+        alto: parseVoiceNotes(voicesData[2]),
+        tenor: parseVoiceNotes(voicesData[3]),
+        bass: parseVoiceNotes(voicesData[4])
+    };
 
-    const sNotes = parseVoiceNotes(voicesData[1]);
-    const aNotes = parseVoiceNotes(voicesData[2]);
-    const tNotes = parseVoiceNotes(voicesData[3]);
-    const bNotes = parseVoiceNotes(voicesData[4]);
-
-    // Extraer ligaduras de fraseo desde la voz 1 (soprano)
-    // Los índices 0-based de nota se convierten a índices 1-based de acorde
     phraseSlurs = extractSlursFromAbcVoice(voicesData[1]).map(s => ({
         start: s.start + 1,
         end:   s.end   + 1
     }));
 
-    if (sNotes.length === 0) return;
-
-    // 4. Reconstruir Estado
-    totalChords = sNotes.length;
-    chordDurations = {};
-    activeChord = 1;
-    activeVoice = 'soprano';
-
-    // --- DETECCIÓN DE ANACRUSA desde el ABC ---
-    // Buscamos la primera barra "|" en la voz 1 (antes de cualquier "|]" o "||")
-    // y contamos los tiempos que la preceden. Si no llenan un compás → es anacrusa.
-    firstBarlineIndex = 0;
-    const rawV1 = voicesData[1];
-    const firstBarPos = rawV1.search(/\|/);
-    if (firstBarPos > 0) {
-        const beforeBar = rawV1.substring(0, firstBarPos);
-        const tmpRegex = /(".*?")?([_\^=]*)([a-gA-Gxz])([,']*)([\d\/]*)/g;
-        let noteCountBefore = 0;
-        let beatsBefore = 0;
-        let tmpMatch;
-        while ((tmpMatch = tmpRegex.exec(beforeBar)) !== null) {
-            noteCountBefore++;
-            let dRaw = tmpMatch[5];
-            let dur = 1;
-            if (dRaw) {
-                if (dRaw === '/') dur = 0.5;
-                else if (dRaw.includes('/')) {
-                    const ps = dRaw.split('/');
-                    dur = parseInt(ps[0] || 1) / parseInt(ps[1] || 2);
-                } else {
-                    dur = parseFloat(dRaw);
-                }
+    // 4. COMPROBACIÓN DE HOMOFONÍA ESTRICTA
+    let isStrictHomophony = true;
+    const sNotes = parsedVoices.soprano;
+    const aNotes = parsedVoices.alto;
+    const tNotes = parsedVoices.tenor;
+    const bNotes = parsedVoices.bass;
+    
+    const numNotes = sNotes.length;
+    if (aNotes.length !== numNotes || tNotes.length !== numNotes || bNotes.length !== numNotes) {
+        isStrictHomophony = false;
+    } else {
+        // Comprobar si cada acorde dura exactamente lo mismo en todas las voces
+        for (let i = 0; i < numNotes; i++) {
+            if (sNotes[i].dur !== aNotes[i].dur || sNotes[i].dur !== tNotes[i].dur || sNotes[i].dur !== bNotes[i].dur) {
+                isStrictHomophony = false;
+                break;
             }
-            beatsBefore += Math.ceil(dur);
-        }
-        const bpm = parseInt((meterMatch ? meterMatch[1] : currentMeter).split('/')[0]);
-        // Si los tiempos antes de la primera barra no llenan un compás completo → anacrusa.
-        // firstBarlineIndex = índice del ÚLTIMO acorde de la anacrusa (semántica de setFirstBarline)
-        if (noteCountBefore > 0 && beatsBefore < bpm) {
-            firstBarlineIndex = noteCountBefore;
         }
     }
-    // -----------------------------------------
 
-    generateInputs();
-
-    const mapAbcToApp = (abcObj, voiceName, idx) => {
-        if (!abcObj) { setNoteData(voiceName, idx, 'C', '', 4); return; }
-
-        // 'z' = silencio visible, 'x' = silencio invisible: ambos → nota vacía
-        if (abcObj.note === 'z' || abcObj.note === 'x') {
+    // Función de mapeo al DOM (común para ambos algoritmos)
+    const mapToApp = (abcObj, voiceName, idx) => {
+        if (!abcObj || abcObj.note === 'z' || abcObj.note === 'x') {
             setNoteData(voiceName, idx, '', '', '');
-            // Reutilizamos el checkbox k- (ornamento) como bandera "silencio invisible"
             const kEl = document.getElementById(`k-${voiceName}${idx}`);
-            if (kEl) kEl.checked = (abcObj.note === 'x');
-            if (voiceName === 'soprano') chordDurations[idx] = abcObj.dur;
+            if (kEl) kEl.checked = (abcObj && abcObj.note === 'x');
             return;
         }
 
         let baseName = abcObj.note.toUpperCase();
-        let octave = 4; // Base: Do central
-        
+        let octave = 4;
         if (abcObj.note === abcObj.note.toLowerCase()) octave = 5; 
         
-        // Ajuste de octava por comas/apóstrofes
         if (abcObj.octMod) {
             const up = (abcObj.octMod.match(/'/g) || []).length;
             const down = (abcObj.octMod.match(/,/g) || []).length;
             octave += (up - down);
         }
 
-        // Heurística suave para corregir octavas extremas en Bajos
         if (voiceName === 'bass' && octave >= 5) octave -= 1; 
         if (voiceName === 'tenor' && octave >= 6) octave -= 1;
 
@@ -6923,15 +6885,111 @@ if (tempoMatch) {
         setNoteData(voiceName, idx, baseName, acc, octave);
         const kEl = document.getElementById(`k-${voiceName}${idx}`);
         if(kEl) kEl.checked = isOrnament;
-
-        if (voiceName === 'soprano') chordDurations[idx] = abcObj.dur;
     };
 
-    for (let i = 0; i < totalChords; i++) {
-        mapAbcToApp(sNotes[i], 'soprano', i+1);
-        mapAbcToApp(aNotes[i], 'alto', i+1);
-        mapAbcToApp(tNotes[i], 'tenor', i+1);
-        mapAbcToApp(bNotes[i], 'bass', i+1);
+    let newDurationsList = [];
+
+    // 5. DECISIÓN DE IMPORTACIÓN
+    if (isStrictHomophony) {
+        // MODO 1: Importación directa (partitura limpia sin trocear)
+        if (numNotes === 0) return;
+        totalChords = numNotes;
+        chordDurations = {};
+        activeChord = 1;
+        activeVoice = 'soprano';
+        
+        generateInputs();
+
+        for (let i = 0; i < numNotes; i++) {
+            const currentDur = sNotes[i].dur;
+            chordDurations[i+1] = currentDur;
+            newDurationsList.push(currentDur);
+            mapToApp(sNotes[i], 'soprano', i+1);
+            mapToApp(aNotes[i], 'alto', i+1);
+            mapToApp(tNotes[i], 'tenor', i+1);
+            mapToApp(bNotes[i], 'bass', i+1);
+        }
+
+    } else {
+        // MODO 2: Hay solapamientos rítmicos, usar algoritmo de línea de tiempo
+        const timeline = { soprano: [], alto: [], tenor: [], bass: [] };
+        const timePoints = new Set();
+        timePoints.add(0);
+
+        for (const [voiceName, notes] of Object.entries(parsedVoices)) {
+            let currentTime = 0;
+            for (const note of notes) {
+                const startTime = Math.round(currentTime * 100) / 100;
+                const endTime = Math.round((currentTime + note.dur) * 100) / 100;
+                
+                timeline[voiceName].push({ ...note, start: startTime, end: endTime });
+                
+                timePoints.add(startTime);
+                timePoints.add(endTime);
+                currentTime = endTime;
+            }
+        }
+
+        const sortedPoints = Array.from(timePoints).sort((a, b) => a - b);
+        const verticalChords = [];
+
+        for (let i = 0; i < sortedPoints.length - 1; i++) {
+            const pointStart = sortedPoints[i];
+            const pointEnd = sortedPoints[i + 1];
+            const sliceDuration = Math.round((pointEnd - pointStart) * 100) / 100;
+            
+            if (sliceDuration <= 0) continue;
+
+            const currentChord = {};
+            for (const voice of ['soprano', 'alto', 'tenor', 'bass']) {
+                const activeNote = timeline[voice].find(n => n.start <= pointStart && n.end >= pointEnd);
+                currentChord[voice] = activeNote ? activeNote : { note: 'z', acc: '', octMod: '', dur: sliceDuration, ornament: '' };
+            }
+            
+            verticalChords.push(currentChord);
+            newDurationsList.push(sliceDuration);
+        }
+
+        if (verticalChords.length === 0) return;
+
+        totalChords = verticalChords.length;
+        chordDurations = {};
+        activeChord = 1;
+        activeVoice = 'soprano';
+
+        generateInputs();
+
+        for (let i = 0; i < verticalChords.length; i++) {
+            const chord = verticalChords[i];
+            chordDurations[i+1] = newDurationsList[i];
+            mapToApp(chord.soprano, 'soprano', i+1);
+            mapToApp(chord.alto, 'alto', i+1);
+            mapToApp(chord.tenor, 'tenor', i+1);
+            mapToApp(chord.bass, 'bass', i+1);
+        }
+    }
+
+    // 6. Calcular Anacrusa basándonos en la duración de la lista final generada
+    firstBarlineIndex = 0;
+    const partsMeter = currentMeter.split('/');
+const bpm = (parseInt(partsMeter[0]) / parseInt(partsMeter[1])) * 4;
+    let beatsBeforeBar = 0;
+    const rawV1 = voicesData[1];
+    const firstBarPos = rawV1.search(/\|/);
+    
+    if (firstBarPos > 0) {
+        const tempNotes = parseVoiceNotes(rawV1.substring(0, firstBarPos));
+        tempNotes.forEach(n => beatsBeforeBar += n.dur);
+        
+        if (beatsBeforeBar > 0 && beatsBeforeBar < bpm) {
+            let accumulated = 0;
+            let sliceIdx = 0;
+            while(accumulated < beatsBeforeBar && sliceIdx < newDurationsList.length) {
+                accumulated += newDurationsList[sliceIdx];
+                sliceIdx++;
+            }
+            firstBarlineIndex = sliceIdx;
+        }
     }
 
     updateTonalityInfo();
@@ -6940,6 +6998,8 @@ if (tempoMatch) {
     saveState();
     renderScore();
 }
+
+
 
 
 async function exportScoreAsPng() {
@@ -7817,9 +7877,9 @@ function guardarCambiosDesdeEditor() {
 function generateCurrentAbcString() {
    const globalMeasureContext = buildGlobalMeasureContext()
     const parts = currentMeter.split('/');
-    const chordsPerMeasure = parseInt(parts[0]);
+    const chordsPerMeasure = (parseInt(parts[0]) / parseInt(parts[1])) * 4;
     const denom = parts[1];
-    let noteUnit = (denom === '8') ? '1/8' : (denom === '2' ? '1/2' : '1/4');
+     let noteUnit = '1/4';
     
     // Obtener tonalidad actual
     const tVal = document.getElementById('tonic').value;
@@ -8319,7 +8379,7 @@ function handleDragEnd() {
 // Lógica auxiliar corregida para evitar errores de redondeo decimal
 function calculateChordIndexFromVisual(targetM, targetN) {
     const parts = currentMeter.split('/');
-    const chordsPerMeasure = parseInt(parts[0]);
+    const chordsPerMeasure = (parseInt(parts[0]) / parseInt(parts[1])) * 4;
     
     let currentM = 0;
     let currentN = 0;
