@@ -5354,17 +5354,23 @@ async function playHarmony() {
     if (activeInstrument === 'choir') baseVolume = -5; 
     sampler.volume.value = baseVolume;
 
+    // NUEVO: Mapa de voces a índices y referencia al contenedor visual
+    const voiceIdxMap = { 'soprano': 0, 'alto': 1, 'tenor': 2, 'bass': 3 };
+    const scoreDiv = document.getElementById('score');
+
     for(let i=1; i<=totalChords; i++) { 
         const durVal = chordDurations[i] || 1;
         const durationSeconds = unitTime * durVal;
         
         ['soprano', 'alto', 'tenor', 'bass'].forEach(voice => {
+            // NUEVO: Comprobar si la voz está oculta (clase hide-vX presente)
+            const vIdx = voiceIdxMap[voice];
+            if (scoreDiv && scoreDiv.classList.contains(`hide-v${vIdx}`)) {
+                return; // Saltamos la reproducción de esta voz si no está visible
+            }
+
             const p = parseNoteForAnalysis(getCombinedNote(voice, i.toString()));
             
-            // --- CORRECCIÓN AQUÍ ---
-            // Verificamos que 'p' existe Y que el midi es un número válido.
-            // Los silencios generan un midi NaN (Not a Number), por lo que esto los ignora
-            // y evita que el reproductor se bloquee.
             if (p && !isNaN(p.midi)) {
                 
                 const noteName = Tone.Frequency(p.midi, "midi").toNote();
@@ -5384,7 +5390,7 @@ async function playHarmony() {
             }
         });
 
-        // El tiempo se acumula igual, aunque haya sido un silencio
+        // El tiempo se acumula igual, aunque haya voces en silencio
         accumulatedTime += durationSeconds;
     } 
 }
