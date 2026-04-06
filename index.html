@@ -3736,13 +3736,7 @@ tipo.includes("Novena de Dominante")
         // nueva clave. El contexto posterior determina su función real.
         let chordsInNewTerritory = 0;
         let foundStableReturn = false;
-        let returnChordIdx = -1; // índice 0-based del acorde de retorno (exclusivo)
         const inflexLookahead = Math.min(results.length, i + 8);
-
-        // V7 del tono original: su raíz es (tónica + 7ª) y su característica es la 7ª menor.
-        // Cuando aparece tras una excursión, señala el retorno aunque la tónica no haya llegado.
-        const dominantRootPC    = (currentTonicPC + 7) % 12;
-        const dominantSeventhPC = (dominantRootPC + 10) % 12;
 
         for (let k = i + 1; k < inflexLookahead; k++) {
             const rk = results[k];
@@ -3753,26 +3747,8 @@ tipo.includes("Novena de Dominante")
                                  tipoK.includes("novena") || tipoK.includes("disminuido") ||
                                  tipoK.includes("aumentado") || tipoK.includes("semidisminuido");
 
-            // 1. Retorno estable a la tónica original con modo coincidente:
-            //    Un acorde MENOR con root = tónica original NO es retorno si la tonalidad
-            //    original es MAYOR (ej. Cm no es retorno a DoM).
-            const modoCoincide = tonActual.mode !== 'major' ||
-                                 !tipoK.includes("menor") || tipoK.includes("mayor");
-            const esRetornoTonica = targetPC !== currentTonicPC &&
-                                    rk.rootPC === currentTonicPC &&
-                                    !esInestableK && modoCoincide;
-
-            // 2. V7 del tono original (identificado por root = dom. + séptima menor característica):
-            //    ej. Sol7 (G-B-D-F) es señal de retorno a DoM aunque todavía no llegue el DoM.
-            const chordPCsK = getChordPCsLocal(structuralChords[`chord${k + 1}`] || {});
-            const esDominantePrincipal = targetPC !== currentTonicPC &&
-                                         rk.rootPC === dominantRootPC &&
-                                         esInestableK &&
-                                         chordPCsK.includes(dominantSeventhPC);
-
-            if (esRetornoTonica || esDominantePrincipal) {
+            if (targetPC !== currentTonicPC && rk.rootPC === currentTonicPC && !esInestableK) {
                 foundStableReturn = true;
-                returnChordIdx = k;
                 break;
             }
             chordsInNewTerritory++;
@@ -3782,12 +3758,9 @@ tipo.includes("Novena de Dominante")
             // ≥2 acordes entre la dominante secundaria y el retorno → inflexión real
             if (chordsInNewTerritory >= 2) {
                 inflexiones.push({
-                    acorde: i + 1,            // 1-based: dominante secundaria (inicio)
-                    acordeFinIdx: returnChordIdx, // 0-based exclusivo: primer acorde de retorno
+                    acorde: i + 1,
                     desdeTonica: tonActual.tonic,
-                    haciaTonica: pcToEnglishTonic(targetPC, newMode) || null, // tónica destino (inglés)
-                    haciaModo:   newMode,         // modo destino ('major' | 'minor')
-                    haciaEsp:    targetEsp
+                    haciaEsp: targetEsp
                 });
             }
             // Con <2 acordes (dominante secundaria simple) o con inflexión confirmada,
@@ -4526,22 +4499,7 @@ for(let i=0; i<totalChords; i++) {
 
 globalTonalidadLocal = tonalidadLocal;
 
-        // --- APLICAR TONALIDAD LOCAL A RANGOS DE INFLEXIÓN ---
-        // Para modulaciones, detectarModulaciones ya actualiza tonalidadLocal.
-        // Para inflexiones, la tonalidad original se mantiene pero los grados
-        // deben referenciarse a la nueva tónica. Actualizamos tonalidadLocal para
-        // que el cálculo de grados, la mixtura modal y el cifrado sean coherentes.
-        inflexiones.forEach(inf => {
-            if (!inf.haciaTonica) return;
-            const desde = inf.acorde - 1;       // 0-based: empieza en la dominante secundaria
-            const hasta = (inf.acordeFinIdx !== undefined) ? inf.acordeFinIdx : desde + 4;
-            for (let j = desde; j < hasta && j < totalChords; j++) {
-                tonalidadLocal[j] = { tonic: inf.haciaTonica, mode: inf.haciaModo };
-            }
-        });
-        // Nota: globalTonalidadLocal apunta al mismo array, por lo que ya refleja los cambios.
-
-
+        // --- DETECCIÓN DE MIXTURA MODAL ---
         const minorOnlyIntervals = [3, 8, 10]; // b3, b6, b7
         const mixturaModal = new Array(totalChords).fill(false);
         for (let i = 0; i < totalChords; i++) {
@@ -4568,20 +4526,6 @@ globalTonalidadLocal = tonalidadLocal;
                 return n && n.pitchClass !== undefined && minorOnlyPCs.includes(parseInt(n.pitchClass, 10));
             });
         }
-
-        // --- PRIORIDAD DE INFLEXIONES SOBRE MIXTURA MODAL ---
-        // Si un acorde pertenece al rango de una inflexión modulante confirmada,
-        // sus notas "extrañas" pertenecen a la nueva tonalidad (no son préstamos
-        // del modo paralelo), por lo que no debe etiquetarse como mixtura modal.
-        // Lo mismo aplica para modulaciones: tonalidadLocal ya cambia de modo,
-        // así que el bucle anterior ya las excluye automáticamente.
-        inflexiones.forEach(inf => {
-            const desde = inf.acorde - 1; // 0-based: dominante secundaria que inicia la inflexión
-            const hasta = (inf.acordeFinIdx !== undefined) ? inf.acordeFinIdx : desde + 4;
-            for (let j = desde; j < hasta && j < totalChords; j++) {
-                mixturaModal[j] = false;
-            }
-        });
 
         // --- TERCERA PASADA: recalcular grados con tonalidad local ---
         for (let i = 0; i < totalChords; i++) {
@@ -5411,10 +5355,7 @@ if (adapt.esDominanteFuncional) {
         });
 inflexiones.forEach(inf => {
     const tonOriginal = tonicLabels[inf.desdeTonica] || inf.desdeTonica;
-    const tonDestino  = inf.haciaEsp || inf.haciaTonica || '?';
-    const modoStr     = inf.haciaModo === 'minor' ? ' menor' : ' mayor';
-    const acordeFin   = (inf.acordeFinIdx !== undefined) ? inf.acordeFinIdx : inf.acorde + 2;
-    infos.push(`🎼 <strong>Inflexión modulante</strong> (Acordes ${inf.acorde}–${acordeFin}): Excursión a ${tonDestino}${modoStr}, con grados referenciados a esa tonalidad, antes de regresar a ${tonOriginal}.`);
+    infos.push(`🎼 <strong>Inflexión modulante</strong> (Acorde ${inf.acorde}): Actúa como dominante pasajera de ${inf.haciaEsp}, pero regresa a la tonalidad de ${tonOriginal}.`);
 });
         if (errors.length) errors.forEach(e => html += `<div class="error-item error-critical"><span>❌</span><div>${e}</div></div>`);
         if (warnings.length) warnings.forEach(w => html += `<div class="error-item error-warning"><span>⚠️</span><div>${w}</div></div>`);
