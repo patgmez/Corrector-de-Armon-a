@@ -2628,10 +2628,15 @@ function checkLeadingTone(c1, c2, leadingTonePC, analysis1, analysis2, chordNum1
         return { successes, warnings };
     }
 
-    // 2. PROLONGACIÓN DE FUNCIÓN DOMINANTE (V->VII, VII->V, V->V/I, etc.)
+       // 2. PROLONGACIÓN DE FUNCIÓN DOMINANTE (V->VII, VII->V, V->V/I, etc.)
     // Definimos qué es función dominante
-    const isDom1 = analysis1.degree.includes("V") || analysis1.quality === "7" || analysis1.degree.includes("vii") || analysis1.degree.includes("VII") || analysis1.quality === "dim" || analysis1.quality === "Aug6";
-    const isDom2 = analysis2 && (analysis2.degree.includes("V") || analysis2.quality === "7" || analysis2.degree.includes("vii") || analysis2.degree.includes("VII") || analysis2.quality === "dim" || analysis2.quality === "Aug6");
+    const isDom = (deg, qual) => {
+        if (!deg) return false;
+        // Evitamos explícitamente que el grado "IV" active la regla por contener la letra "V"
+        return (deg.includes("V") && !deg.includes("IV")) || qual === "7" || deg.includes("vii") || deg.includes("VII") || qual === "dim" || qual === "Aug6";
+    };
+    const isDom1 = isDom(analysis1.degree, analysis1.quality);
+    const isDom2 = analysis2 && isDom(analysis2.degree, analysis2.quality);
 
     // Si ambos son dominantes, la sensible puede mantenerse o moverse dentro de la armonía
     if (isDom1 && isDom2) {
@@ -3124,17 +3129,18 @@ function adaptarAnalisisParaReglas(resNuevo, chordActual = null, chordSiguiente 
     // DETECCIÓN DE DOMINANTE FUNCIONAL
     let esFuncional = false;
     
-        // 1. Si el tipo ya indica posible dominante (intervalos)
+       // 1. Si el tipo ya indica posible dominante (intervalos)
     const tieneIntervalosDominante = 
         t.includes("Mayor con 7ª menor") || 
         t === "7 (omit 5)" ||
-        (t.includes("7") && !t.includes("M7") && !t.includes("m7") && !t.includes("Menor")) ||
-        (resNuevo.esSeptimaSinQuinta && t.includes("Mayor")) ||
+        (t.includes("7") && !t.includes("M7") && !t.includes("m7") && !t.includes("Menor") && !t.includes("Maj7")) ||
+        (resNuevo.esSeptimaSinQuinta && t.includes("Mayor") && !t.includes("Maj7")) ||
         t.includes("Disminuido") || 
         t.includes("Dism") || 
-        t.includes("Semidisminuido") ||(t.includes("9") && !t.includes("m9") && !t.includes("Maj9") && !t.includes("M9")) ||
-t.includes("Novena de Dominante")
-;
+        t.includes("Semidisminuido") ||
+        (t.includes("9") && !t.includes("m9") && !t.includes("Maj9") && !t.includes("M9")) ||
+        t.includes("Novena de Dominante");
+
 
     
     // 2. Si tiene los intervalos y tenemos contexto de enlace, evaluamos función
@@ -3527,16 +3533,17 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         const tonActual = tonalidadLocal[i];
         const currentTonicPC = getTonicPC(tonActual.tonic);
 
-                const esDomPotencial = (
+                        const esDomPotencial = (
             tipo.includes("Dominante") || 
             tipo.includes("M7m") || 
             tipo.includes("Mayor con 7ª menor") ||
             tipo.includes("Disminuido") || 
             tipo.includes("Sexta aumentada") || 
-            (tipo.includes("Mayor") && !tipo.includes("M7M")) || 
-            (tipo.includes("7") && !tipo.includes("Menor") && !tipo.includes("m7") && !tipo.includes("M7M")) ||
-            tipo === "Aumentado" || (tipo.includes("9") && !tipo.includes("m9") && !tipo.includes("Maj9") && !tipo.includes("M9")) ||
-tipo.includes("Novena de Dominante")
+            (tipo.includes("Mayor") && !tipo.includes("M7M") && !tipo.includes("Maj7")) || 
+            (tipo.includes("7") && !tipo.includes("Menor") && !tipo.includes("m7") && !tipo.includes("M7M") && !tipo.includes("Maj7")) ||
+            tipo === "Aumentado" || 
+            (tipo.includes("9") && !tipo.includes("m9") && !tipo.includes("Maj9") && !tipo.includes("M9")) ||
+            tipo.includes("Novena de Dominante")
         );
 
 
@@ -6910,12 +6917,16 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
         const intData = calculateInterval(bassNote, note);
         if (!intData) return;
         
-        let step = intData.stepDiff % 7; 
+                let step = intData.stepDiff % 7; 
         let rawNum = step + 1;
         // Guard NaN: si la aritmética de intervalo falló, no procesar esta nota
         if (isNaN(rawNum)) return;
         
-        if (inv === 0 && rawNum === 2) rawNum = 9;
+        // CORRECCIÓN: Cifrar con 9 si la distancia es de novena o mayor, 2 si es de segunda
+        if (rawNum === 2 && intData.stepDiff >= 8) {
+            rawNum = 9;
+        }
+
 
                 // El cifrado físico se calcula siempre respecto a la armadura global del pentagrama
         const globalTonicDOM = document.getElementById('tonic').value;
@@ -6952,21 +6963,35 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
         });
     });
 
-     // 3. REGLAS DE VISIBILIDAD
+    // 3. REGLAS DE VISIBILIDAD
     let finalParts = [];
     const esDesconocido = res.error || !res.tipo || res.tipo === "Desconocido" || res.tipo.includes("Posición desconocida");
     
     // NUEVA LÍNEA: Detectar si hay un retardo y no está en el bajo
     const esRetardoSuperior = retardoInfo && retardoInfo.tipo === 'retardo' && retardoInfo.vocesRetardo && !retardoInfo.vocesRetardo.includes('bass');
 
+    let esMismoBajo = prevChord && prevChord.bass && bassNote.midi === prevChord.bass.midi;
+    let esResolucion = retardoInfo && retardoInfo.tipo === 'resolucion';
+
     processedIntervals.forEach(i => {
         let text = "";
         let show = false;
+
+        // CORRECCIÓN: Detectar notas que no cambian durante una resolución
+        let isHeldResolution = false;
+        if (esResolucion && esMismoBajo) {
+            if (retardoInfo.vocesResolucion && !retardoInfo.vocesResolucion.includes(i.voice)) {
+                if (prevChord && prevChord[i.voice] && chord[i.voice].midi === prevChord[i.voice].midi) {
+                    isHeldResolution = true;
+                }
+            }
+        }
         
-        // MODIFICACIÓN: Forzar visualización si es desconocido o tiene retardo superior
-        if (esDesconocido || esRetardoSuperior) {
+        // MODIFICACIÓN: Forzar visualización si es desconocido, retardo superior o nota mantenida
+        if (esDesconocido || esRetardoSuperior || isHeldResolution) {
             show = true; 
         } else {
+
             // --- A. REGLAS ESTÁNDAR ---
             if (i.hasAccidental) show = true; 
             if (i.isDiminished) show = true;
@@ -7083,7 +7108,9 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
             else if (i.prefix === '^') pref = "♯";
             else if (i.prefix === '_') pref = "♭";
 
-            if (esDesconocido) {
+            if (isHeldResolution) {
+                text = "-";
+            } else if (esDesconocido) {
                 text = pref + i.num; 
             } else {
                 const esEstructuraDominante = tipo.includes("Dominante") || tipo.includes("Mayor con 7ª menor") || tipo.includes("M7m") || tipo === "7 (omit 5)" || esNovena;
@@ -7141,12 +7168,17 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
                 // Unísono (midiDiff===0): no se muestra
             } else {
                 // PC diferente del bajo: calcular el intervalo normalmente
-                const intData = calculateInterval(bassNote, note);
+                                const intData = calculateInterval(bassNote, note);
                 if (!intData) return;
                 let step = intData.stepDiff % 7;
                 let num = step + 1;
-                if (inv === 0 && num === 2) num = 9;
+                
+                // CORRECCIÓN: Cifrar la resolución como 9 si correspondiera
+                if (num === 2 && intData.stepDiff >= 8) {
+                    num = 9;
+                }
                 resNum = num;
+
 
                 // Comprobar si ya aparece en finalParts (mismo número, ya mostrado)
                 if (finalParts.some(fp => fp.num === resNum)) return;
