@@ -2,12 +2,29 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Analizador de Armonía</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.4/abcjs-basic-min.js" defer></script>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+function cdnFallback(elScript, urlFallback) {
+    if (elScript.dataset.fbDone) return; 
+    elScript.dataset.fbDone = '1';
+    var s = document.createElement('script');
+    s.src = urlFallback;
+    s.async = false;                  
+    if (elScript.defer) s.defer = true;   // mantiene defer si el original lo tenía
+    document.head.appendChild(s);
+    if (window.console) console.warn('[CDN fallback] primario falló, cargando:', urlFallback);
+}
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.4.4/abcjs-basic-min.js" defer
+        onerror="cdnFallback(this, 'https://cdn.jsdelivr.net/npm/abcjs@6.4.4/dist/abcjs-basic-min.js')"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"
+            onerror="cdnFallback(this, 'https://cdn.jsdelivr.net/npm/tone@14.8.49/build/Tone.js')"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+            onerror="cdnFallback(this, 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js')"></script>
 
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
@@ -202,10 +219,10 @@
     }
     .piano-keys { height: 85px; }
     body.piano-closed { 
-        padding-bottom: 10px; /* Quitar hueco del piano */
+        padding-bottom: 10px; 
     }
     body.piano-closed .score-container {
-        height: 85vh; /* Usar 85% de la altura de la pantalla */
+        height: 85vh; 
         max-height: none;        
         min-height: 200px;
     }
@@ -282,7 +299,6 @@
         .key-black:active { background: #000; }
         .key-selected { background: #3b82f6; box-shadow: 0 0 10px #3b82f6; border-color: #2563eb; }
         .chord-inputs { display: none; }
-/* landscape media query deduplicada arriba */
 .dropdown-item.disabled {
     opacity: 0.5;
     pointer-events: none;
@@ -340,7 +356,7 @@
 .sug-grado { font-weight: bold; color: #fbbf24; }
 
 #floating-results {
-    display: none; /* Oculto por defecto */
+    display: none;
     position: fixed;
     top: 70px;
     right: 20px;
@@ -405,22 +421,17 @@
     cursor: ns-resize !important;
     pointer-events: all;
 }
-/* ========================================================= */
-/* OCULTAR NOTAS SIN BORRAR PENTAGRAMAS (MODO QUIRÚRGICO)   */
-/* ========================================================= */
 
-/* SOPRANO (Voz 0) - Ocultar solo elementos musicales */
 #score.hide-v0 .abcjs-v0.abcjs-note, 
 #score.hide-v0 .abcjs-v0.abcjs-beam, 
 #score.hide-v0 .abcjs-v0.abcjs-rest, 
 #score.hide-v0 .abcjs-v0.abcjs-slur, 
 #score.hide-v0 .abcjs-v0.abcjs-tie, 
 #score.hide-v0 .abcjs-v0.abcjs-lyric,
-#score.hide-v0 .abcjs-v0.abcjs-ledger { /* Líneas adicionales de las notas */
+#score.hide-v0 .abcjs-v0.abcjs-ledger { 
     visibility: hidden !important;
 }
 
-/* CONTRALTO (Voz 1) - Ocultar solo elementos musicales */
 #score.hide-v1 .abcjs-v1.abcjs-note, 
 #score.hide-v1 .abcjs-v1.abcjs-beam, 
 #score.hide-v1 .abcjs-v1.abcjs-rest, 
@@ -431,7 +442,7 @@
     visibility: hidden !important;
 }
 
-/* TENOR (Voz 2) - Ocultar solo elementos musicales */
+
 #score.hide-v2 .abcjs-v2.abcjs-note, 
 #score.hide-v2 .abcjs-v2.abcjs-beam, 
 #score.hide-v2 .abcjs-v2.abcjs-rest, 
@@ -442,7 +453,7 @@
     visibility: hidden !important;
 }
 
-/* BAJO (Voz 3) - Ocultar solo elementos musicales */
+
 #score.hide-v3 .abcjs-v3.abcjs-note, 
 #score.hide-v3 .abcjs-v3.abcjs-beam, 
 #score.hide-v3 .abcjs-v3.abcjs-rest, 
@@ -453,8 +464,6 @@
     visibility: hidden !important;
 }
 
-/* ASEGURAR VISIBILIDAD DE ESTRUCTURA */
-/* Esto fuerza a que las líneas, claves y compases se vean SIEMPRE */
 #score .abcjs-staff,
 #score .abcjs-clef,
 #score .abcjs-key-signature,
@@ -809,52 +818,51 @@
 function toggleResultsWindow(show) {
     const el = document.getElementById('floating-results');
     if (show === undefined) {
-        // Alternar
+ 
         el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'flex' : 'none';
     } else {
-        // Forzar estado
+
         el.style.display = show ? 'flex' : 'none';
     }
 }
 
-// Variable para rastrear el menú activo
+
 let activeMenu = null;
 
-// Función para alternar menús
+
 function toggleMenu(menuId) {
     const menu = document.getElementById(menuId);
     
-    // Cerrar menú activo si es diferente
+
     if (activeMenu && activeMenu !== menu) {
         activeMenu.classList.remove('show');
     }
     
-    // Alternar el menú actual
+
     menu.classList.toggle('show');
     activeMenu = menu.classList.contains('show') ? menu : null;
     
-    // Actualizar estado de los elementos del menú Edición
+
     updateMenuItems();
 }
 
 
-// Cerrar menús al hacer clic fuera O al seleccionar una opción
+
 document.addEventListener('click', function(event) {
     const isClickInsideMenu = event.target.closest('.menu-group');
     const clickedItem = event.target.closest('.dropdown-item');
 
-    // CASO 1: Clic fuera del menú -> Cerrar
+
     if (!isClickInsideMenu && activeMenu) {
         activeMenu.classList.remove('show');
         activeMenu = null;
     }
-    // CASO 2: Clic en una opción del menú -> Cerrar también
+
     else if (clickedItem && activeMenu) {
-        // Excepción: No cerrar si tocamos un select o input (como el selector de valores)
-        // para permitir al usuario cambiar la opción sin que se le cierre en la cara.
+        
         if (event.target.tagName === 'SELECT' || event.target.tagName === 'INPUT') return;
         
-        // No cerrar si la opción está deshabilitada
+
         if (clickedItem.classList.contains('disabled')) return;
 
         activeMenu.classList.remove('show');
@@ -862,7 +870,7 @@ document.addEventListener('click', function(event) {
     }
 });
 
-// Actualizar estado de los elementos del menú Edición
+
 function updateMenuItems() {
     const undoItem = document.getElementById('undo-menu-item');
     const redoItem = document.getElementById('redo-menu-item');
@@ -877,6 +885,7 @@ function updateMenuItems() {
 function saveProject() {
     // Recopilamos el estado actual EXACTAMENTE igual que en saveState()
 const state = { 
+    version: STATE_VERSION,
     totalChords, 
     tonic: document.getElementById('tonic').value, 
     mode: document.getElementById('mode').value, 
@@ -889,7 +898,7 @@ const state = {
     inputs: {} 
 };
 
-    // Guardamos el valor de cada input
+
     for(let i=1; i<=totalChords; i++) {
         ['soprano','alto','tenor','bass'].forEach(v => {
             state.inputs[`n-${v}${i}`] = document.getElementById(`n-${v}${i}`).value;
@@ -899,26 +908,25 @@ const state = {
         });
     }
 
-    // Convertir a texto JSON
-    const jsonContent = JSON.stringify(state, null, 2); // Indentado para que sea legible si se abre con bloc de notas
+
+    const jsonContent = JSON.stringify(state, null, 2);
     
     // Crear el Blob y el enlace de descarga
     const blob = new Blob([jsonContent], { type: 'application/json' });
     const link = document.createElement('a');
     
-    // Generar nombre de archivo con fecha
+
     const date = new Date();
     const dateStr = date.toISOString().slice(0,10); // YYYY-MM-DD
     const timeStr = date.getHours() + "-" + date.getMinutes();
     link.href = URL.createObjectURL(blob);
     link.download = `armonia_proyecto_${dateStr}_${timeStr}.json`;
     
-    // Ejecutar descarga
+
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
-    // Cerrar menú
+    URL.revokeObjectURL(link.href); 
     if (activeMenu) {
         activeMenu.classList.remove('show');
         activeMenu = null;
@@ -927,10 +935,10 @@ const state = {
 
 // 2. ABRIR PROYECTO (Cargar JSON)
 function loadProject() {
-    // Crear input de archivo invisible
+
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json'; // Aceptamos JSON
+    input.accept = '.json'; 
     
     input.onchange = function(event) {
         const file = event.target.files[0];
@@ -939,23 +947,27 @@ function loadProject() {
         const reader = new FileReader();
         reader.onload = function(e) {
             try {
-                // Parsear el JSON
-                const state = JSON.parse(e.target.result);
+
+                const parsed = JSON.parse(e.target.result);
                 
-                // Validar que parece un archivo de este programa
-                if (!state.totalChords || !state.inputs) {
+
+                if (!parsed.totalChords || !parsed.inputs) {
                     throw new Error("El archivo no tiene el formato correcto de proyecto.");
                 }
 
-                // Usamos tu función existente restoreState()
-                // Primero reseteamos para limpiar basura anterior
-                // Nota: restoreState ya maneja la regeneración de inputs
+                
+                const state = migrateState(parsed);
+                if (!state) {
+                    throw new Error(`El archivo es de una versión más nueva del programa. Actualiza el programa para abrirlo.`);
+                }
+
+                
                 restoreState(state);
                 
-                // Añadimos este estado cargado al historial para poder hacer "Deshacer"
+                
                 saveState(); 
                 
-                // Actualizar interfaz
+  
                 updateStatusDisplay();
                 updateBarlineButton();
                 document.getElementById('analysis-results').innerHTML = '<p style="text-align: center; color: #94a3b8;">Proyecto cargado exitosamente. Pulsa "Analizar".</p>';
@@ -968,10 +980,10 @@ function loadProject() {
         reader.readAsText(file);
     };
     
-    // Simular clic
+
     input.click();
     
-    // Cerrar menú
+
     if (activeMenu) {
         activeMenu.classList.remove('show');
         activeMenu = null;
@@ -1049,7 +1061,7 @@ const tiposAcorde = {
 };
 
 // --- DICCIONARIO GLOBAL DE DOMINANTES ---
-// Mapea la nota fundamental del acorde -> Tónica de resolución (Cuarta justa ascendente)
+
 const mapDominantes = {
     // Notación Inglesa
     'C': 'Fa',  'C#': 'Fa#', 'Db': 'Solb',
@@ -1071,17 +1083,24 @@ const mapDominantes = {
 };
 let globalResults = [];
 let globalTonalidadLocal = [];
-let visualErrorState = [];
-let visualMelodicLeaps = []; // Saltos melódicos prohibidos
-let visualCrossings = []; // Cruzamientos de voces
-let visualLeadingTone = [];
-let visualTessitura = [];
-let visualSequences = [];
-let visualRetardos = []; // [{chordIdx: 1-based, voice: 'soprano'|..., resolvedRes: {...}}]
-let visualNotasDeAdorno = []; // [{chordIdx: 1-based, voice: 'soprano'|..., tipo: 'paso'|'floreo'}]
-let globalChordBeatPositions = {}; // Mapa: chordIdx(1-based) -> número de tiempo en el compás
-let phraseSlurs = [];     // [{start: chordIdx1based, end: chordIdx1based}] — ligaduras de fraseo
-let noteTies = [];        // [{chord: chordIdx1based, voice: 'soprano'|...}] — ligaduras de nota (usuario)
+
+const visualState = {
+    errors:        [], // disonancias, paralelas, etc. (categoría histórica más amplia)
+    melodicLeaps:  [], // saltos melódicos prohibidos
+    crossings:    [],  // cruzamientos de voces
+    leadingTone:  [],  // sensible sin resolver
+    tessitura:    [],  // notas fuera del rango de la voz
+    sequences:    [],  // marcas de secuencias armónicas
+    retardos:     [],  // retardos detectados [{chordIdx, voice, resolvedRes}]
+    notasDeAdorno:[],  // notas de paso/floreo [{chordIdx, voice, tipo}]
+};
+function resetVisualState() {
+    
+    for (const key of Object.keys(visualState)) visualState[key].length = 0;
+}
+let globalChordBeatPositions = {}; 
+let phraseSlurs = [];     
+let noteTies = [];        
 let chordVisualMap = {};
 let isEarTrainingMode = false;
 let isGrouped = false;
@@ -1101,6 +1120,47 @@ const historyStack = [];
 let historyIndex = -1;
 const MAX_HISTORY = 30;
 const STORAGE_KEY = 'analizador_autosave_v5_final';
+
+
+const STATE_VERSION = 1;
+const migrations = {
+    // 1: (s) => { /* transformaciones de v1→v2 */ return s; },
+    // 2: (s) => { /* transformaciones de v2→v3 */ return s; },
+};
+
+function migrateState(s) {
+    if (!s || typeof s !== 'object') return null;
+
+    
+    let v = (typeof s.version === 'number') ? s.version : STATE_VERSION;
+
+    
+    if (v > STATE_VERSION) {
+        console.warn(`Save de versión ${v} más nueva que la actual (${STATE_VERSION}). No se carga.`);
+        return null;
+    }
+
+    
+    while (v < STATE_VERSION) {
+        const fn = migrations[v];
+        if (typeof fn !== 'function') {
+            
+            v++;
+            continue;
+        }
+        try {
+            s = fn(s);
+        } catch (e) {
+            console.error(`Error migrando estado v${v}→v${v + 1}:`, e);
+            return null;
+        }
+        v++;
+    }
+
+    s.version = STATE_VERSION;
+    return s;
+}
+
 const normalizarNota = (n) => n ? n.toLowerCase() : "";
 const formatearNota = (n) => n ? n.charAt(0).toUpperCase() + n.slice(1) : "";
 const obtenerBase = (n) => n ? n.replace(/[#b]/g, "") : "";
@@ -1109,7 +1169,7 @@ let activeInstrument = 'piano';
 let loadedSamplers = {}; // Almacén para no recargar sonidos ya bajados
 let reverb = null;
 
-// Mapas de notas para no cargar 88 archivos (carga uno cada 3-4 notas y Tone.js ajusta el tono)
+
 const SAMPLE_MAP_PIANO = {
     "A0": "A0.mp3", "C1": "C1.mp3", "D#1": "Ds1.mp3", "F#1": "Fs1.mp3", 
     "A1": "A1.mp3", "C2": "C2.mp3", "D#2": "Ds2.mp3", "F#2": "Fs2.mp3", 
@@ -1121,8 +1181,7 @@ const SAMPLE_MAP_PIANO = {
     "A7": "A7.mp3", "C8": "C8.mp3"
 };
 
-// Configuración de URLs para cada instrumento
-// Usamos fuentes públicas confiables (Github Pages de Tone.js y Gleitz)
+
 const INSTRUMENT_CONFIG = {
     'piano': {
         baseUrl: "https://tonejs.github.io/audio/salamander/",
@@ -1141,8 +1200,7 @@ const INSTRUMENT_CONFIG = {
         map: { "C3": "C3.mp3", "E3": "E3.mp3", "G3": "G3.mp3", "C4": "C4.mp3", "E4": "E4.mp3", "G4": "G4.mp3", "C5": "C5.mp3" }
     }
 };
-// Función auxiliar para iterar sobre todos los pares de voces únicos
-// Genera: S-A, S-T, S-B, A-T, A-B, T-B
+
 function forEachVoicePair(callback) {
     for (let i = 0; i < VOICES.length; i++) {
         for (let j = i + 1; j < VOICES.length; j++) {
@@ -1150,8 +1208,7 @@ function forEachVoicePair(callback) {
         }
     }
 }
-// Verifica si dos voces se mueven en la misma dirección (ambas suben o ambas bajan)
-// Retorna false si hay movimiento oblicuo (una quieta) o contrario.
+
 function isDirectMotion(n1Start, n1End, n2Start, n2End) {
     const diff1 = n1End.midi - n1Start.midi;
     const diff2 = n2End.midi - n2Start.midi;
@@ -1166,7 +1223,7 @@ function isDirectMotion(n1Start, n1End, n2Start, n2End) {
 }
 
 function setFirstBarline() {
-    // Fijamos la barra de compás después del último acorde actual
+    
     firstBarlineIndex = totalChords;
     saveState();
     renderScore();
@@ -1207,7 +1264,7 @@ function selectCurrentNote() {
     const chordsPerMeasure = parseInt(currentMeter.split('/')[0]);
     let targetM = 0, targetN = 0;
     
-    // Simulamos el recorrido para encontrar dónde cae visualmente el 'activeChord'
+    
     let currentM = 0, currentN = 0, beats = 0;
 
     for (let k = 1; k <= totalChords; k++) {
@@ -1326,10 +1383,10 @@ function addNewChord() {
     saveState();
     
     ['soprano','alto','tenor','bass'].forEach(v => {
-        // Establecemos los valores en blanco para crear el silencio
+        
         setNoteData(v, totalChords, '', '', '');
         
-        // Nos aseguramos de que no esté activado el modo adorno en el nuevo silencio
+        
         const kEl = document.getElementById(`k-${v}${totalChords}`);
         if(kEl) kEl.checked = false;
     });
@@ -1343,7 +1400,7 @@ function addNewChord() {
 
 
 function insertChordAfterActive() {
-    // Si ya estamos en el último acorde, comportamiento original (añadir al final)
+    
     if (activeChord >= totalChords) {
         addNewChord();
         return;
@@ -1436,6 +1493,7 @@ updateBarlineButton();
 function saveState() {
     generateInputs();
     const state = { 
+        version: STATE_VERSION, // Para que migrateState pueda saber el formato al cargar
         totalChords, 
         tonic: document.getElementById('tonic').value, 
         mode: document.getElementById('mode').value, 
@@ -1461,7 +1519,20 @@ function saveState() {
     if(historyStack.length > MAX_HISTORY) historyStack.shift(); 
     else historyIndex++;
     updateHistoryButtons(); 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+
+    
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+        if (!window._autosaveWarned) {
+            window._autosaveWarned = true;
+            console.warn("Autoguardado deshabilitado:", e.message);
+            alert("⚠️ El autoguardado se ha deshabilitado en esta sesión " +
+                  "(almacenamiento del navegador lleno o bloqueado). " +
+                  "Tu trabajo sigue intacto y el deshacer/rehacer funciona, " +
+                  "pero recuerda usar 'Guardar proyecto' para no perder el ejercicio al cerrar.");
+        }
+    }
 }
 
 function restoreState(s) {
@@ -1476,7 +1547,7 @@ function restoreState(s) {
     }
     
     chordDurations = s.durations || {};
-// Parche de seguridad por si cargamos un save antiguo
+
 for(let i=1; i<=totalChords; i++) {
     if(!chordDurations[i]) chordDurations[i] = 1;
 }
@@ -1512,7 +1583,7 @@ if (s.isGrouped !== undefined) {
             }
         }
     } else {
-        // Compatibilidad con archivos JSON antiguos
+        
         isGrouped = false; 
     }
     renderScore();
@@ -1588,7 +1659,7 @@ function calculateInterval(n1, n2) {
         else if (semitones > (standardSemitones[normalStep] + octaveOffset)) quality = "Aumentada";
         else quality = "Disminuida";
     }
-    // Guard: si stepDiff resultó NaN (baseName o octava inválidos), no hay intervalo calculable
+    
     if (isNaN(stepDiff)) return null;
     return { fullName: quality, semitones: semitones, stepDiff: stepDiff };
 }
@@ -1620,13 +1691,11 @@ function checkTessitura(chord, num) {
         if (note.midi < range.min || note.midi > range.max) {
             warnings.push(`Tesitura en Acorde ${num}: ${voice.charAt(0).toUpperCase() + voice.slice(1)} fuera de rango (${range.label}).`);
             
-            // Añadir info visual
-            if (typeof visualTessitura !== 'undefined') {
-                visualTessitura.push({
+   
+                            visualState.tessitura.push({
                     chord: num,
                     voice: voice
                 });
-            }
         }
     });
     return warnings;
@@ -1637,7 +1706,7 @@ function checkDissonanceResolution(c1, c2, res1, res2) {
     if (!c1 || !c2 || !res1 || res1.error) return warnings;
 if (res2 && res2.tipo === "Dominante sobre tónica") return [];
 
-    // vNames ya definido en ámbito global
+   
     const tieneDisonancia = res1.tipo.includes("7") || res1.tipo.includes("Novena") || res1.tipo.includes("M7") || res1.esSeptimaSinQuinta || res1.esNovena;
     if (!tieneDisonancia) return warnings;
 const esDominante1 = res1.tipo.includes("Dominante") || res1.tipo.includes("Mayor con 7ª menor") || res1.tipo === "7 (omit 5)";
@@ -1651,7 +1720,7 @@ const esDominante1 = res1.tipo.includes("Dominante") || res1.tipo.includes("Mayo
         const n1 = c1[v], n2 = c2[v];
         if(!n1 || !n2) return;
 
-        // Intervalo de la nota respecto a la fundamental
+        
         const interval = (n1.pitchClass - rootPC + 12) % 12;
         const diff = n2.midi - n1.midi;
         
@@ -1727,14 +1796,14 @@ function checkSeventhPreparation(c1, c2, res2, esFuncional) {
     
     const tipo = res2.tipo || "", rootPC = res2.rootPC;
     
-    // Detectamos si tiene séptima física (incluyendo disminuidos)
+    
     const tieneSeptima = tipo.includes("7") || tipo.includes("Novena") || tipo.includes("M7") || tipo.includes("m7") || res2.esSeptimaSinQuinta || tipo.includes("Disminuido") || tipo.includes("Semidisminuido");
     
     if (!tieneSeptima) return [];
 
     const tLower = tipo.toLowerCase();
     
-    // Si el análisis ya determinó que es funcional (V o VII), tiene licencia
+    
     const tieneLicenciaDeSalto = tLower.includes("dominante") || tipo.includes("Aug6") || esFuncional;
 
     ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
@@ -1772,13 +1841,13 @@ function checkSecondInversionRules(c0, c1, c2, res1, res2, esMismoAcorde, res0, 
     if (!c1 || !res1 || res1.error || !res1.estadoTexto) return warnings;
     if (!res1.estadoTexto.includes("2ª Inversión")) return warnings;
 
-    // Detectar si el acorde es una Séptima/Dominante
+    
     const esAcordeSeptima = res1.tipo.includes("7") || res1.tipo.includes("Dominante") || res1.tipo.includes("Novena") || res1.tipo.includes("M7") || res1.esSeptimaSinQuinta;
 
-    // Detectar si el acorde anterior es la misma armonía
+    
     const esMismoAnterior = (res0 && !res0.error && res0.rootPC === res1.rootPC && res0.tipo === res1.tipo);
 
-    // Usar la tonalidad local en lugar del HTML
+    
     const currentTonicPC = getTonicPC(localTonicStr);
     const currentLeadingTonePC = getLeadingTonePC(localTonicStr, localModeStr); 
 
@@ -1854,8 +1923,7 @@ function checkSecondInversionRules(c0, c1, c2, res1, res2, esMismoAcorde, res0, 
     const bassOut = Math.abs(c2.bass.midi - c1.bass.midi);
     
     if (!esCadencial && !esMismoAnterior && bassIn > 2 && bassIn !== 12) {
-        // En acordes 4/3 (V7 invertido) el salto en el bajo es más aceptable si es lógico melódicamente,
-        // pero mantenemos la advertencia general salvo que sea muy evidente.
+        
         warnings.push(`Acorde en 2ª inv.: El BAJO entra por salto (${bassIn} semitonos). Comprueba que sea 6/4 cadencial.`);
     }
     
@@ -1863,8 +1931,7 @@ function checkSecondInversionRules(c0, c1, c2, res1, res2, esMismoAcorde, res0, 
         warnings.push(`Acorde en 2ª inv.: El BAJO sale por salto (${bassOut} semitonos).`);
     }
 
-    // REVISIÓN DE LA CUARTA (Solo si NO es el mismo acorde anterior, NO es cadencial Y NO ES SÉPTIMA)
-    // CORRECCIÓN APLICADA: Si es V4/3 (esAcordeSeptima), la "cuarta" es la fundamental y no requiere resolución obligada.
+    
     if (!esMismoAnterior && !esCadencial && !esAcordeSeptima) {
         const rootPC = res1.rootPC;
         const vocesConCuarta = [];
@@ -1925,7 +1992,7 @@ function checkVoiceExchangeStrict(c1, c2, res) {
         const nA1 = c1[vA], nA2 = c2[vA];
         const nB1 = c1[vB], nB2 = c2[vB];
 
-        // ¿Hay intercambio de notas (PitchClass)?
+        
         if (nA1.pitchClass === nB2.pitchClass && nB1.pitchClass === nA2.pitchClass) {
             let esSwapFund = false;
             let notaDisonantePC = -1;
@@ -2013,13 +2080,11 @@ function checkVoiceCrossings(chord, chordNum) {
                 warnings.push(`Cruzamiento en Acorde ${chordNum}: ${vNames[lower]} está por encima de ${vNames[upper]}.`);
                 
                 // Añadir info visual
-                if (typeof visualCrossings !== 'undefined') {
-                    visualCrossings.push({
+                                    visualState.crossings.push({
                         chord: chordNum,
                         v1: upper,
                         v2: lower
                     });
-                }
             }
         }
     }
@@ -2075,9 +2140,7 @@ function checkMelodicMinorSteps(c1, c2, chordNum, localTonic, localMode) {
         
         if (pc1 === naturalVI && pc2 === raisedVII && isAscending) {
             warnings.push(`Escala Melódica (${vNames[v]}): Intervalo de 2ª Aumentada prohibido. Al enlazar el VI con la sensible, el VI también debe alterarse ascendentemente.`);
-            if (typeof visualMelodicLeaps !== 'undefined') {
-        visualMelodicLeaps.push({ chord: chordNum + 1, voice: v, type: 'leap' });
-    }
+                    visualState.melodicLeaps.push({ chord: chordNum + 1, voice: v, type: 'leap' });
         }
         
     });
@@ -2149,7 +2212,7 @@ function checkParallelsStrict(c1, c2, res1, res2, chordIndex, localTonic, localM
         const algunaNotaQuieta = (diffGrave === 0 || diffAguda === 0);
         const movimientoContrario = (diffGrave > 0 && diffAguda < 0) || (diffGrave < 0 && diffAguda > 0);
         
-        // Solo aplicamos la prohibición si ambas voces se mueven y NO es en movimiento contrario
+        
         if (!algunaNotaQuieta && !movimientoContrario) {
             const diss1 = isDissonant(int1, v2, v1);
             const diss2 = isDissonant(int2, v2, v1);
@@ -2158,12 +2221,12 @@ function checkParallelsStrict(c1, c2, res1, res2, chordIndex, localTonic, localM
                 infos.push(`Disonancias seguidas por movimiento directo entre ${vNames[v1]} y ${vNames[v2]}: Asegúrate de que el enlace sea correcto.`);
                 badPairs.push(`${v1}-${v2}`);
                 
-                visualErrorState.push({ type: 'dissonance', c1: chordIndex, c2: chordIndex + 1, v1: v1, v2: v2 });
+                visualState.errors.push({ type: 'dissonance', c1: chordIndex, c2: chordIndex + 1, v1: v1, v2: v2 });
             }
         }
 
         // --- REGLA 2: PARALELAS PROHIBIDAS (5ªs y 8ªs) ---
-        // Si hay movimiento oblicuo (alguna nota quieta), NO hay paralelas prohibidas.
+        
         if (algunaNotaQuieta) return; 
 
         const step1 = int1.stepDiff % 7;
@@ -2173,7 +2236,7 @@ function checkParallelsStrict(c1, c2, res1, res2, chordIndex, localTonic, localM
         if (step1 === 0 && int1.fullName === "Justa" && step2 === 0 && int2.fullName === "Justa") {
             errors.push(`Octavas consecutivas entre ${vNames[v1]} y ${vNames[v2]}.`);
             badPairs.push(`${v1}-${v2}`);
-            visualErrorState.push({ type: 'parallel', c1: chordIndex, c2: chordIndex+1, v1: v1, v2: v2 });
+            visualState.errors.push({ type: 'parallel', c1: chordIndex, c2: chordIndex+1, v1: v1, v2: v2 });
         }
         
         // QUINTAS
@@ -2186,7 +2249,7 @@ function checkParallelsStrict(c1, c2, res1, res2, chordIndex, localTonic, localM
             if (int1.fullName === "Justa" && int2.fullName === "Justa") {
                 errors.push(`Quintas consecutivas entre ${vNames[v1]} y ${vNames[v2]}.`);
                 badPairs.push(`${v1}-${v2}`);
-                visualErrorState.push({
+                visualState.errors.push({
                     type: 'parallel', // o 'direct'
                     c1: chordIndex,     // Índice acorde origen
                     c2: chordIndex + 1, // Índice acorde destino
@@ -2202,14 +2265,14 @@ function checkParallelsStrict(c1, c2, res1, res2, chordIndex, localTonic, localM
         errors.push(`Quintas desiguales prohibidas (de dism. a Justa) entre ${vNames[v1]} y ${vNames[v2]}.`);
         badPairs.push(`${v1}-${v2}`);
        
-        visualErrorState.push({ type: 'parallel', c1: chordIndex, c2: chordIndex + 1, v1: v1, v2: v2 });
+        visualState.errors.push({ type: 'parallel', c1: chordIndex, c2: chordIndex + 1, v1: v1, v2: v2 });
     }
 }
 else if (int1.fullName.includes("Aumentada") && int2.fullName === "Justa") {
     errors.push(`Quintas desiguales prohibidas (de Aumentada a Justa) entre ${vNames[v1]} y ${vNames[v2]}.`);
     badPairs.push(`${v1}-${v2}`);
     
-    visualErrorState.push({ type: 'parallel', c1: chordIndex, c2: chordIndex + 1, v1: v1, v2: v2 });
+    visualState.errors.push({ type: 'parallel', c1: chordIndex, c2: chordIndex + 1, v1: v1, v2: v2 });
 }
 
             
@@ -2243,15 +2306,13 @@ function checkDirectIntervals(c1, c2, ignorePairs = [], chordIndex) {
             warnings.push(`${destInterval === 7 ? 'Quinta' : 'Octava'} directa entre Soprano y Bajo.`);
             
             // --- AÑADIR ERROR VISUAL ---
-            if (typeof visualErrorState !== 'undefined') {
-                visualErrorState.push({
-                    type: 'direct', // Esto hará que la línea sea punteada según tu función drawVisualErrorLines
+                            visualState.errors.push({
+                    type: 'direct', 
                     c1: chordIndex,
                     c2: chordIndex + 1,
                     v1: v1,
                     v2: v2
                 });
-            }
         }
 
         const intVoice2 = calculateInterval(c1[v2], c2[v2]);
@@ -2265,16 +2326,14 @@ function checkDirectIntervals(c1, c2, ignorePairs = [], chordIndex) {
             if (c2[v1].midi === c1[v2].midi || c2[v2].midi === c1[v1].midi) return; 
             warnings.push(`Quinta directa ${vNames[v1]}-${vNames[v2]}.`);
 
-             // --- AÑADIR ERROR VISUAL ---
-             if (typeof visualErrorState !== 'undefined') {
-                visualErrorState.push({
+ 
+                             visualState.errors.push({
                     type: 'direct',
                     c1: chordIndex,
                     c2: chordIndex + 1,
                     v1: v1,
                     v2: v2
                 });
-            }
         }
     });
 
@@ -2318,7 +2377,7 @@ function checkDirectDissonance(c1, c2, res2, esFuncional) { // <-- Añadido esFu
     const rootPC = res2.rootPC;
     const tipo = res2.tipo.toLowerCase();
     
-    // <-- Añadido esFuncional a la validación
+
     const esDominante = esFuncional || tipo.includes("dominante") || tipo.includes("mayor con 7ª menor") || res2.tipo.includes("m7m") || tipo === "7 (omit 5)" || tipo.includes("alemana");
 
     forEachVoicePair((v1, v2) => {
@@ -2363,8 +2422,7 @@ function checkDirectDissonance(c1, c2, res2, esFuncional) { // <-- Añadido esFu
             // --- LÓGICA MODIFICADA AQUÍ ---
             const sonExtremas = (v1 === 'soprano' && v2 === 'bass');
             
-            // Si son extremas (S-B), avisamos si CUALQUIERA salta (regla estricta).
-            // Si son intermedias (S-T, C-T, etc), avisamos solo si AMBAS saltan (regla permisiva).
+            
             const esFalta = sonExtremas ? (isLeap1 || isLeap2) : (isLeap1 && isLeap2);
 
             if (esFalta) {
@@ -2457,12 +2515,10 @@ function checkWeakUnisons(chord, num, isLastChord, res, tonicPC) {
 
 function checkStepwiseContraryMotion(c1, c2, res1, res2, analysis1, localTonic, localMode) {
     const warnings = [];
-    // Validaciones básicas de existencia
+
     if (!c1 || !c2 || !res1 || !res2 || !analysis1 || res1.error || res2.error || !res1.estadoTexto || !res2.estadoTexto) return [];
     
-    // --- NUEVO FILTRO: Solo para tríadas Mayores o Menores ---
-    // Si alguno de los dos acordes NO es una tríada pura (Mayor o Menor), salimos.
-    // Esto evita avisos en acordes de 7ª, aumentados, disminuidos, etc.
+    
     const tiposPermitidos = ["Mayor", "Menor"];
     if (!tiposPermitidos.includes(res1.tipo) || !tiposPermitidos.includes(res2.tipo)) {
         return [];
@@ -2479,11 +2535,11 @@ function checkStepwiseContraryMotion(c1, c2, res1, res2, analysis1, localTonic, 
     const isStepwise = (diffPC === 1 || diffPC === 2 || diffPC === 10 || diffPC === 11);
     if (!isStepwise) return [];
 
-    // Si el bajo está en silencio en alguno de los acordes, no se aplica esta regla
+    
     if (!c1.bass || !c2.bass) return [];
 
     const bassDiff = c2.bass.midi - c1.bass.midi;
-    if (bassDiff === 0) return []; // Si el bajo no se mueve, no aplica
+    if (bassDiff === 0) return []; 
 
     const upperVoices = ['soprano', 'alto', 'tenor'];
     const vNames = { soprano:'Soprano', alto:'Contralto', tenor:'Tenor' };
@@ -2566,8 +2622,8 @@ function checkMelodicIntervalsStrict(c1, c2, allowDim3 = false, c3 = null, chord
         }
         
         // Guardar info visual si hubo error
-        if (hasError && typeof visualMelodicLeaps !== 'undefined' && chordNum2) {
-            visualMelodicLeaps.push({
+        if (hasError && chordNum2) {
+            visualState.melodicLeaps.push({
                 chord: chordNum2, // El acorde destino del salto
                 voice: v,
                 type: 'leap'
@@ -2678,8 +2734,8 @@ function checkLeadingTone(c1, c2, leadingTonePC, analysis1, analysis2, chordNum1
                     warnings.push(`La sensible en ${vNames[v]} no resuelve a la tónica y tampoco indirectamente en el Soprano.`);
                     
                     // Añadir info visual
-                    if (typeof visualLeadingTone !== 'undefined' && chordNum1 && chordNum2) {
-                        visualLeadingTone.push({
+                    if (chordNum1 && chordNum2) {
+                        visualState.leadingTone.push({
                             c1: chordNum1,
                             c2: chordNum2,
                             voice: v
@@ -2694,8 +2750,8 @@ function checkLeadingTone(c1, c2, leadingTonePC, analysis1, analysis2, chordNum1
                 }
                 
                 // Añadir info visual
-                if (typeof visualLeadingTone !== 'undefined' && chordNum1 && chordNum2) {
-                    visualLeadingTone.push({
+                if (chordNum1 && chordNum2) {
+                    visualState.leadingTone.push({
                         c1: chordNum1,
                         c2: chordNum2,
                         voice: v
@@ -4106,7 +4162,7 @@ const esDominanteVieja = (temp.rootPC === (currentTonicPC + 7) % 12) &&
 // resolución debe producir un acorde conocido.
 // ================================================================
 function detectarRetardos(results, structuralChords, totalChords) {
-    visualRetardos = []; // Reset global
+    visualState.retardos.length = 0; // Reset in-place (mantiene la referencia)
 
             for (let i = 0; i < totalChords; i++) {
             const r = results[i];
@@ -4225,7 +4281,7 @@ function detectarRetardos(results, structuralChords, totalChords) {
 
         // Guardar para anotación visual (una entrada por voz de retardo)
         posiblesRetardos.forEach(v => {
-            visualRetardos.push({ chordIdx: i + 1, voice: v }); // chordIdx es 1-based
+            visualState.retardos.push({ chordIdx: i + 1, voice: v }); // chordIdx es 1-based
         });
     }
 }
@@ -4277,7 +4333,7 @@ function computeChordBeats() {
 // a la misma nota. Ambas pueden aparecer en parte débil o fuerte.
 // ================================================================
 function detectarNotasDeAdorno(results, structuralChords, parsed, totalChords) {
-    visualNotasDeAdorno = []; // Reset global
+    visualState.notasDeAdorno.length = 0; // Reset in-place (mantiene la referencia)
 
     for (let i = 1; i < totalChords - 1; i++) {
         const r = results[i];
@@ -4431,21 +4487,15 @@ function detectarNotasDeAdorno(results, structuralChords, parsed, totalChords) {
         // Registrar para marcadores visuales
         vocesAdorno.forEach(v => {
             const tipo = vocesNotaDePaso.includes(v) ? 'paso' : 'floreo';
-            visualNotasDeAdorno.push({ chordIdx: chordNum, voice: v, tipo });
+            visualState.notasDeAdorno.push({ chordIdx: chordNum, voice: v, tipo });
         });
     }
 }
 
 function analyzeHarmony() {
-visualErrorState = [];
-visualMelodicLeaps = [];
-visualCrossings = [];
-visualLeadingTone = [];
-visualTessitura = [];
-visualSequences = [];
-visualNotasDeAdorno = [];
+    resetVisualState();
 
-document.querySelector('.piano-wrapper').classList.add('piano-hidden');
+    document.querySelector('.piano-wrapper').classList.add('piano-hidden');
 
     document.body.classList.add('piano-closed');
     
@@ -4508,10 +4558,11 @@ for(let i=1; i<=totalChords; i++) {
     // Obtener el siguiente acorde para análisis funcional
     const siguienteChord = (i < totalChords) ? structuralChords[`chord${i+1}`] : null;
     
-    const res = identifyingChord(chordIParaId, bajoRefI, true, siguienteChord);const siguienteRes = (i < totalChords) ? results[i] : null; // Nota: results aún no está lleno aquí
-    
-    // Para la primera pasada, necesitamos hacer dos pasadas o guardar los resultados intermedios
-    // Solución simple: hacer primero todas las identificaciones, luego las adaptaciones
+    const res = identifyingChord(chordIParaId, bajoRefI, true, siguienteChord);
+
+    // Estrategia de dos pasadas: primero identificamos todos los acordes y luego
+    // las adaptaciones (`adaptarAnalisisParaReglas`, más abajo) usan results[] ya
+    // completo para resolver dominantes secundarias, modulaciones, etc.
     results.push(res);
 }
 
@@ -4977,15 +5028,13 @@ globalTonalidadLocal = tonalidadLocal;
                         const rango = `${i + 1}–${c}`;
                         infos.push(`🎼 <strong>Secuencia ${tipoSecuencia}</strong> (Acordes ${rango}): Modelo de ${L} acordes con ${numRepeticiones} repetición/es.`);
 
-                        if (typeof visualSequences !== 'undefined') {
-                            visualSequences.push({ start: i + 1, end: i + L, type: 'modelo' });
+                                                    visualState.sequences.push({ start: i + 1, end: i + L, type: 'modelo' });
                             for (let rep = 1; rep <= numRepeticiones; rep++) {
-                                visualSequences.push({
+                                visualState.sequences.push({
                                     start: i + rep * L + 1,
                                     end:   i + (rep + 1) * L,
                                     type:  'repeticion'
                                 });
-                            }
                         }
                         
                         i = c; 
@@ -5274,15 +5323,15 @@ warnings.push(...checkSpacing(parsed));
             const suppressedLinks  = new Set(); // "N-M" de enlaces suprimidos
 
             let seqIdx = 0;
-            while (seqIdx < visualSequences.length) {
-                const entry = visualSequences[seqIdx];
+            while (seqIdx < visualState.sequences.length) {
+                const entry = visualState.sequences[seqIdx];
                 if (entry.type !== 'modelo') { seqIdx++; continue; }
 
                 // Recoger repeticiones consecutivas de este modelo
                 const reps = [];
                 let j = seqIdx + 1;
-                while (j < visualSequences.length && visualSequences[j].type === 'repeticion') {
-                    reps.push(visualSequences[j]);
+                while (j < visualState.sequences.length && visualState.sequences[j].type === 'repeticion') {
+                    reps.push(visualState.sequences[j]);
                     j++;
                 }
                 seqIdx = j;
@@ -5324,32 +5373,32 @@ warnings.push(...checkSpacing(parsed));
                 successes.splice(0, successes.length,  ...filterText(successes));
 
                 // Filtrar marcas visuales
-                // visualErrorState: enlace c1→c2 (índices 1-based del par de acordes)
-                visualErrorState.splice(0, visualErrorState.length,
-                    ...visualErrorState.filter(e =>
+                // visualState.errors: enlace c1→c2 (índices 1-based del par de acordes)
+                visualState.errors.splice(0, visualState.errors.length,
+                    ...visualState.errors.filter(e =>
                         !suppressedLinks.has(`${e.c1}-${e.c2}`)
                     )
                 );
-                // visualMelodicLeaps: 'chord' = acorde destino del salto → enlace (chord-1)→chord
-                visualMelodicLeaps.splice(0, visualMelodicLeaps.length,
-                    ...visualMelodicLeaps.filter(e =>
+                // visualState.melodicLeaps: 'chord' = acorde destino del salto → enlace (chord-1)→chord
+                visualState.melodicLeaps.splice(0, visualState.melodicLeaps.length,
+                    ...visualState.melodicLeaps.filter(e =>
                         !suppressedLinks.has(`${e.chord - 1}-${e.chord}`) &&
                         !suppressedChords.has(e.chord)
                     )
                 );
-                // visualCrossings: 'chord' = acorde donde se cruzan las voces
-                visualCrossings.splice(0, visualCrossings.length,
-                    ...visualCrossings.filter(e => !suppressedChords.has(e.chord))
+                // visualState.crossings: 'chord' = acorde donde se cruzan las voces
+                visualState.crossings.splice(0, visualState.crossings.length,
+                    ...visualState.crossings.filter(e => !suppressedChords.has(e.chord))
                 );
-                // visualLeadingTone: enlace c1→c2
-                visualLeadingTone.splice(0, visualLeadingTone.length,
-                    ...visualLeadingTone.filter(e =>
+                // visualState.leadingTone: enlace c1→c2
+                visualState.leadingTone.splice(0, visualState.leadingTone.length,
+                    ...visualState.leadingTone.filter(e =>
                         !suppressedLinks.has(`${e.c1}-${e.c2}`)
                     )
                 );
-                // visualTessitura: 'chord' = acorde individual
-                visualTessitura.splice(0, visualTessitura.length,
-                    ...visualTessitura.filter(e => !suppressedChords.has(e.chord))
+                // visualState.tessitura: 'chord' = acorde individual
+                visualState.tessitura.splice(0, visualState.tessitura.length,
+                    ...visualState.tessitura.filter(e => !suppressedChords.has(e.chord))
                 );
             }
         }
@@ -6634,9 +6683,18 @@ function syncSelection() {
 
 document.addEventListener('DOMContentLoaded', () => {
     try {
-        if (localStorage.getItem(STORAGE_KEY)) {
-            const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
-            restoreState(s);
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            const migrated = migrateState(parsed);
+            if (migrated) {
+                restoreState(migrated);
+            } else {
+                // El save existe pero no es compatible (versión futura o corrupto).
+                // Reseteamos a un estado limpio. No borramos el localStorage por si
+                // el usuario quisiera recuperarlo manualmente.
+                resetScore();
+            }
         } else {
             resetScore();
         }
@@ -6772,14 +6830,19 @@ function generarCifradoZamacois(chord, tonicVal, modeVal, prevChord = null, next
 if (retardoInfo && retardoInfo.tipo === 'retardo' && retardoInfo.vocesRetardo && retardoInfo.vocesRetardo.includes('bass')) {
         return "＼"; // Usamos la barra invertida Unicode (U+FF3C) para evitar que ABCJS se rompa al exportar/dibujar
     }
+    // Helper: una voz cuenta como "real" si existe Y tiene altura (no es silencio).
+    // Necesario porque, según desde dónde se llame, una voz vacía puede aparecer
+    // como `null` (analyzeHarmony filtra) o como `{baseName: ""}` (renderScore no).
+    const esVozReal = (n) => !!(n && n.baseName && n.baseName !== "");
+
     // CAMBIO 2: Si el bajo está en silencio, usar la voz grave más baja disponible
-    let bassNote = chord.bass;
+    let bassNote = esVozReal(chord.bass) ? chord.bass : null;
     let bajoEsRest = false;
     if (!bassNote) {
         bajoEsRest = true;
         const voiceOrder = ['tenor', 'alto', 'soprano'];
         for (const v of voiceOrder) {
-            if (chord[v]) { bassNote = chord[v]; break; }
+            if (esVozReal(chord[v])) { bassNote = chord[v]; break; }
         }
         if (!bassNote) return ""; // Todas las voces en silencio
     }
@@ -6792,7 +6855,7 @@ if (retardoInfo && retardoInfo.tipo === 'retardo' && retardoInfo.vocesRetardo &&
     let processedIntervals = [];
     // CAMBIO 2: excluir del cálculo de intervalos la voz que actúa de bajo sustituto
     const voices = bajoEsRest
-        ? ['soprano', 'alto', 'tenor'].filter(v => chord[v] && chord[v] !== bassNote)
+        ? ['soprano', 'alto', 'tenor'].filter(v => esVozReal(chord[v]) && chord[v] !== bassNote)
         : ['soprano', 'alto', 'tenor'];
     let uniquePCs = new Set();
 
@@ -6826,7 +6889,7 @@ if (retardoInfo && retardoInfo.tipo === 'retardo' && retardoInfo.vocesRetardo &&
         else if (res.estadoTexto.includes("3ª")) inv = 3;
     }
 
-if (prevChord && prevChord.bass) {
+if (prevChord && esVozReal(prevChord.bass)) {
         // Le pasamos el acorde actual como "siguiente" del previo
         const prevRes = identifyingChord(prevChord, prevChord.bass, true, chordParaCifrado);
 if (!prevRes.error && prevRes.tipo === "Dominante sobre tónica" && bassNote.midi === prevChord.bass.midi) {
@@ -6864,13 +6927,30 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
     } 
     // Si no es la principal, comprobar si actúa como dominante secundaria o modulante
     else if ((esTipoV || esTipoVII) && nextChord && res.rootPC !== -1) {
-       
- const resNext = identifyingChord(nextChord, nextChord.bass, true);
+        // Resolver bajo de referencia del siguiente acorde con el mismo fallback
+        // que usamos arriba para el acorde actual: si el bajo está en silencio o
+        // ausente, descender por tenor → alto → soprano hasta encontrar voz válida.
+        // Esto evita que `nextChord.bass.pitchClass` reviente cuando bass === null.
+        let nextBass = esVozReal(nextChord.bass) ? nextChord.bass : null;
+        if (!nextBass) {
+            for (const v of ['tenor', 'alto', 'soprano']) {
+                if (esVozReal(nextChord[v])) {
+                    nextBass = nextChord[v];
+                    break;
+                }
+            }
+        }
+
+        if (nextBass) {
+            const nextChordParaId = esVozReal(nextChord.bass)
+                ? nextChord
+                : { ...nextChord, bass: nextBass };
+            const resNext = identifyingChord(nextChordParaId, nextBass, true);
                 if (!resNext.error && resNext.rootPC !== -1) {
             const targetEsperado = esTipoV ? (res.rootPC + 5) % 12 : (res.rootPC + 1) % 12;
             
             // Excepción: Resolución a un acorde 6/4 cadencial (donde el bajo físico es el target esperado)
-            const esSextaCuartaCadencial = resNext.estadoTexto && resNext.estadoTexto.includes("2ª Inversión") && nextChord.bass.pitchClass === targetEsperado;
+            const esSextaCuartaCadencial = resNext.estadoTexto && resNext.estadoTexto.includes("2ª Inversión") && nextBass.pitchClass === targetEsperado;
             
             if (resNext.rootPC === targetEsperado || esSextaCuartaCadencial) {
                 isDominantFunction = true;
@@ -6890,6 +6970,7 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
                 }
             }
         }
+        } // cierre de if (nextBass)
     } else if (esPedalDominante) {
         isDominantFunction = true;
         const dist = (res.rootPC - bassNote.pitchClass + 12) % 12;
@@ -7789,11 +7870,17 @@ function mostrarSugerenciasClasicas(p) {
     
     // --- NUEVO: Extraer contexto armónico previo y posterior para la simulación ---
     const fixedVoiceName = activeVoice;
-const fixedNoteRaw = getCombinedNote(activeVoice, activeChord);
-const fixedNoteData = parseNoteForAnalysis(getCombinedNote(activeVoice, activeChord));
-const fixedMidi = (fixedNoteData && !isNaN(fixedNoteData.midi)) 
-    ? fixedNoteData.midi 
-    : opcion.rootPC + 48;
+    const fixedNoteRaw = getCombinedNote(activeVoice, activeChord);
+    const fixedNoteData = fixedNoteRaw ? parseNoteForAnalysis(fixedNoteRaw) : null;
+    // Si la voz activa está en silencio, usamos el midi del bajo (`p`) como ancla,
+    // igual que hace `aplicarSugerencia` cuando se da el mismo caso. Si por alguna
+    // razón el bajo tampoco tiene midi válido (no debería: abrirVentanaSugerencias
+    // exige nota en bajo), caemos a 60 (Do4) como punto medio del registro vocal.
+    // (Antes había `opcion.rootPC + 48` aquí pero `opcion` no existe en este ámbito,
+    // así que era un ReferenceError latente que solo se disparaba en este caso.)
+    const fixedMidi = (fixedNoteData && !isNaN(fixedNoteData.midi))
+        ? fixedNoteData.midi
+        : (p && !isNaN(p.midi) ? p.midi : 60);
 
     let prevChordData = null;
     if (activeChord > 1) {
@@ -8834,9 +8921,17 @@ function cerrarManual() {
     document.getElementById('modal-manual').style.display = 'none';
 }
 
-// Cierra el manual si se hace clic fuera del contenido (en el fondo oscuro)
-document.getElementById('modal-manual').addEventListener('click', function(e) {
-    if (e.target === this) cerrarManual();
+// Cierra el manual si se hace clic fuera del contenido (en el fondo oscuro).
+// Importante: este script se ejecuta MIENTRAS se parsea el <body>, pero el div
+// #modal-manual está al final del documento (línea ~9929), por lo que en este
+// momento aún no existe en el DOM. Por eso registramos el listener tras
+// DOMContentLoaded y comprobamos defensivamente que el elemento exista.
+document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById('modal-manual');
+    if (!modal) return; // si por alguna razón el modal no existe, salimos sin romper
+    modal.addEventListener('click', function(e) {
+        if (e.target === this) cerrarManual();
+    });
 });
 
 
@@ -9142,7 +9237,7 @@ function drawVisualErrorLines() {
     
 
     // DEBUG: Si quieres saber si detecta errores, descomenta la siguiente línea:
-    // alert("Errores detectados: " + visualErrorState.length);
+    // alert("Errores detectados: " + visualState.errors.length);
 
     const voiceToIdx = { 'soprano': 0, 'alto': 1, 'tenor': 2, 'bass': 3 };
 
@@ -9173,8 +9268,8 @@ function drawVisualErrorLines() {
         }
     };
 
-    if (visualErrorState && visualErrorState.length > 0) {
-        visualErrorState.forEach(err => {
+    if (visualState.errors && visualState.errors.length > 0) {
+        visualState.errors.forEach(err => {
             const coords1 = chordVisualMap[err.c1];
             const coords2 = chordVisualMap[err.c2];
         if (!coords1 || !coords2) return;
@@ -9246,10 +9341,10 @@ function drawVisualErrorLines() {
     });
     }
     // 2. DIBUJAR SALTOS MELÓDICOS PROHIBIDOS (línea verde discontinua entre cabezas de nota)
-    if (visualMelodicLeaps && visualMelodicLeaps.length > 0) {
+    if (visualState.melodicLeaps && visualState.melodicLeaps.length > 0) {
         const voiceToIdxL = { 'soprano': 0, 'alto': 1, 'tenor': 2, 'bass': 3 };
 
-        visualMelodicLeaps.forEach(leap => {
+        visualState.melodicLeaps.forEach(leap => {
             // El salto va del acorde (chord-1) al acorde chord
             const srcChord  = leap.chord - 1;
             const dstChord  = leap.chord;
@@ -9290,10 +9385,10 @@ function drawVisualErrorLines() {
     }
     
     // 3. DIBUJAR CRUZAMIENTOS DE VOCES (líneas moradas entre las dos voces cruzadas)
-    if (visualCrossings && visualCrossings.length > 0) {
+    if (visualState.crossings && visualState.crossings.length > 0) {
         const voiceToIdx = { 'soprano': 0, 'alto': 1, 'tenor': 2, 'bass': 3 };
         
-        visualCrossings.forEach(cross => {
+        visualState.crossings.forEach(cross => {
             const coords = chordVisualMap[cross.chord];
             if (!coords) return;
             
@@ -9333,10 +9428,10 @@ function drawVisualErrorLines() {
     }
     
     // 4. DIBUJAR SENSIBLES SIN RESOLUCIÓN (flecha roja desde c1 a c2)
-    if (visualLeadingTone && visualLeadingTone.length > 0) {
+    if (visualState.leadingTone && visualState.leadingTone.length > 0) {
         const voiceToIdx = { 'soprano': 0, 'alto': 1, 'tenor': 2, 'bass': 3 };
         
-        visualLeadingTone.forEach(lt => {
+        visualState.leadingTone.forEach(lt => {
             const coords1 = chordVisualMap[lt.c1];
             const coords2 = chordVisualMap[lt.c2];
             if (!coords1 || !coords2) return;
@@ -9395,10 +9490,10 @@ function drawVisualErrorLines() {
     }
     
     // 5. DIBUJAR NOTAS FUERA DE TESITURA (rectángulo azul alrededor)
-    if (visualTessitura && visualTessitura.length > 0) {
+    if (visualState.tessitura && visualState.tessitura.length > 0) {
         const voiceToIdx = { 'soprano': 0, 'alto': 1, 'tenor': 2, 'bass': 3 };
         
-        visualTessitura.forEach(tess => {
+        visualState.tessitura.forEach(tess => {
             const coords = chordVisualMap[tess.chord];
             if (!coords) return;
             
@@ -9436,8 +9531,8 @@ function drawVisualErrorLines() {
         
     }
         // 6. DIBUJAR MARCA DE SECUENCIA ARMÓNICA (Modelo en negro, repeticiones en verde)
-    if (typeof visualSequences !== 'undefined' && visualSequences.length > 0) {
-        visualSequences.forEach(seq => {
+    if (visualState.sequences.length > 0) {
+        visualState.sequences.forEach(seq => {
             const coords1 = chordVisualMap[seq.start];
             const coords2 = chordVisualMap[seq.end];
             if (!coords1 || !coords2) return;
@@ -9484,10 +9579,10 @@ function drawVisualErrorLines() {
     }
 
     // 7. DIBUJAR MARCAS DE RETARDO ("R" en círculo ámbar junto a la cabeza de nota)
-    if (typeof visualRetardos !== 'undefined' && visualRetardos.length > 0) {
+    if (visualState.retardos.length > 0) {
         const voiceToIdxR = { 'soprano': 0, 'alto': 1, 'tenor': 2, 'bass': 3 };
 
-        visualRetardos.forEach(ret => {
+        visualState.retardos.forEach(ret => {
             const coords = chordVisualMap[ret.chordIdx];
             if (!coords) return;
 
@@ -9546,10 +9641,10 @@ function drawVisualErrorLines() {
     }
 
     // 8. DIBUJAR MARCAS DE NOTA DE PASO / FLOREO ("NP" o "F" en círculo teal)
-    if (typeof visualNotasDeAdorno !== 'undefined' && visualNotasDeAdorno.length > 0) {
+    if (visualState.notasDeAdorno.length > 0) {
         const voiceToIdxA = { 'soprano': 0, 'alto': 1, 'tenor': 2, 'bass': 3 };
 
-        visualNotasDeAdorno.forEach(adorno => {
+        visualState.notasDeAdorno.forEach(adorno => {
             const coords = chordVisualMap[adorno.chordIdx];
             if (!coords) return;
 
