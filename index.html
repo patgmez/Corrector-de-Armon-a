@@ -2706,7 +2706,7 @@ function checkDominantPedalResolution(c1, c2, res1) {
         if (intervalFromBass === 11) {
             const targetPC = c1.bass.pitchClass; 
             if (n2.pitchClass !== targetPC) {
-                warnings.push(`Dominante sobre tónica: La sensible (7M) en ${vNames[v]} debe resolver en la tónica.`);
+                warnings.push(`Dominante sobre tónica: La sensible (7M) en ${vNames[v]} debe resolver en la tónica, siempre que no lo haga indirectamente en el soprano. Compruebalo`);
             }
         }
         if (intervalFromBass === 5) {
