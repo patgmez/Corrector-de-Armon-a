@@ -1049,11 +1049,7 @@ const tiposAcorde = {
     "4": "Mayor (omit 5)", "3": "Menor (omit 5)",
     "4,3,4,3": "Novena Mayor (M9)", 
     "3,4,3,4": "Novena Menor (m9)", 
-    "4,3,3,3": "Novena de Dominante (b9)",
-    "2,3,6":"Dominante sobre tónica",
-    "2,5,4":"Dominante sobre tónica",
-    "5,4,2":"Dominante sobre tónica",
-    "5,3,3":"Dominante sobre tónica"
+    "4,3,3,3": "Novena de Dominante (b9)"
 };
 const mapDominantes = {
     'C': 'Fa',  'C#': 'Fa#', 'Db': 'Solb',
@@ -2784,7 +2780,7 @@ function identifyingChord(chordObj, notaBajoReferencia, checkPedal = true, nextC
                     tipo: "Dominante sobre tónica",
                     intervalos: "",
                     ordenadas: [],
-                    estadoTexto: "Sobre tónica (Pedal)",
+                    estadoTexto: "Pedal",
                     rootPC: (bassPC + 7) % 12,
                     esNovena: false,
                     esSeptimaSinQuinta: true,
