@@ -2752,6 +2752,37 @@ function identifyingChord(chordObj, notaBajoReferencia, checkPedal = true, nextC
 
     // 2. Clasificación
     const res = procesarIdentificacionAcorde(chordParaAnalisis, bajoParaAnalisis);
+
+    // --- Re-clasificación como "Dominante sobre tónica" para 9ª sin 3ª (cifrado 9|7|5) ---
+    // Este apilamiento (bajo + 5ª + 7ª + 9ª, sin 3ª) es ambiguo: puede ser un acorde real con el
+    // bajo como fundamental, o un pedal de tónica bajo una estructura de dominante. Si el bajo se
+    // mantiene (misma clase de altura, cualquier octava) en el acorde siguiente, se reclasifica
+    // como pedal ("Dominante sobre tónica") para que reciba su tratamiento armónico y cifrado
+    // (+7) habituales. Si el bajo enlaza con cualquier otra nota, se conserva la clasificación
+    // original (9ª sin 3ª / cifrado 9|7|5).
+    if (!res.error && res.esNovenaSinTercera && res.estadoTexto === "Fundamental" && checkPedal && nextChordObj) {
+        const bassPC = bajoParaAnalisis.pitchClass;
+        let nextBass = (nextChordObj.bass && nextChordObj.bass.baseName) ? nextChordObj.bass : null;
+        if (!nextBass) {
+            for (const v of ['tenor', 'alto', 'soprano']) {
+                if (nextChordObj[v] && nextChordObj[v].baseName) { nextBass = nextChordObj[v]; break; }
+            }
+        }
+        if (nextBass && nextBass.pitchClass === bassPC) {
+            return {
+                error: false,
+                fundamental: "",
+                tipo: "Dominante sobre tónica",
+                intervalos: "",
+                ordenadas: [],
+                estadoTexto: "Sobre tónica (Pedal)",
+                rootPC: (bassPC + 7) % 12,
+                esNovena: false,
+                esSeptimaSinQuinta: true,
+                esNovenaSinTercera: false
+            };
+        }
+    }
     
     // 3. Pedal de dominante (si la clasificación básica falla, es pedal,
     //    o es un apilamiento por terceras "no practicable" con la 9ª en el
@@ -2898,7 +2929,7 @@ function procesarIdentificacionAcorde(chordParaAnalisis, bajoParaAnalisis) {
     let estadoTexto = "Posición desconocida";
     ordenadas.forEach((nota, index) => {
         if (nota === bajoNota) {
-            if (index === 0) estadoTexto = "Estado Fundamental";
+            if (index === 0) estadoTexto = "Fundamental";
             else if (index === 1) estadoTexto = esNovenaSinTercera ? "2ª Inversión (en 5ª)" : "1ª Inversión";
             else if (index === 2) estadoTexto = esNovenaSinTercera ? "3ª Inversión (en 7ª)" : esNovenaIncompleta ? "3ª Inversión (7ª en bajo)" : esSeptimaSinQuinta ? "3ª Inversión" : "2ª Inversión";
             else if (index === 3) estadoTexto = (tipo.includes("9") || tipo.includes("Novena") || esNovenaIncompleta || esNovenaSinTercera) ? "No practicable (9ª en bajo)" : "3ª Inversión";
@@ -4901,7 +4932,7 @@ function construirYMostrarResultados(results, adaptations, structuralChords, con
         if (tipoCorto.includes("(dominante)")) tipoCorto = tipoCorto.replace("(dominante)", "").trim();
 
         let estadoCorto = (r.estadoTexto !== undefined && r.estadoTexto !== null) ? r.estadoTexto : "Desconocido";
-        if (estadoCorto.includes("Fundamental")) estadoCorto = "Est. Fund.";
+        if (estadoCorto.includes("Fundamental")) estadoCorto = "Fundamental";
         if (estadoCorto.includes("Primera")) estadoCorto = "1ª Inv.";
         if (estadoCorto.includes("Segunda")) estadoCorto = "2ª Inv.";
         if (estadoCorto.includes("Tercera")) estadoCorto = "3ª Inv.";
@@ -6625,9 +6656,7 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
             if (i.hasAccidental) show = true; 
             if (i.isDiminished) show = true;
             if (i.isSensible) show = true;                        
-            if (i.num === 9) show = true;    
-
-            
+            if (i.num === 9) show = true;              
             if (esPedalDominante) {
              show = false;
         }
