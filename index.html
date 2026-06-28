@@ -3029,10 +3029,10 @@ function esDominanteFuncional(acordeActual, resActual, chordIdx, results, struct
     if (resActual.rootPC === nextRes.rootPC && tipoActual === tipoSiguiente) {
         // Es el mismo acorde repetido → consideramos que la función dominante se prolonga
         // Solo necesitamos comprobar si el acorde actual es V o VII
-        const esTipoV = tipo.includes("Mayor") || tipo.includes("Dominante") || tipo === "7m (sin 5ª)" || 
-(tipo.includes("9") && !tipo.includes("m9") && !tipo.includes("Maj9") && !tipo.includes("M9")) || 
-tipo.includes("Novena de Dominante") || tipo.includes("Novena menor de dominante") || tipo.includes("M7m") ||
-tipo === "7m9m Novena menor de dominante (sin 5ª)";
+        const esTipoV = tipoActual.includes("Mayor") || tipoActual.includes("Dominante") || tipoActual === "7m (sin 5ª)" || 
+(tipoActual.includes("9") && !tipoActual.includes("m9") && !tipoActual.includes("Maj9") && !tipoActual.includes("M9")) || 
+tipoActual.includes("Novena de Dominante") || tipoActual.includes("Novena menor de dominante") || tipoActual.includes("M7m") ||
+tipoActual === "7m9m Novena menor de dominante (sin 5ª)";
 
         const esTipoVII = tipoActual.includes("Disminuido") || tipoActual.includes("Dism") || tipoActual.includes("Semidisminuido");
         
