@@ -1041,7 +1041,7 @@ const tiposAcorde = {
     "4,3": "Mayor", "3,4": "Menor", "4,4": "Aumentado", "3,3": "Disminuido",
     "4,3,4": "M7M", "4,3,3": "M7m", "4,4,3": "5A7M", "3,4,3": "m7m", "3,4,4": "m7M",
     "3,3,4": "5dism7m (7ª de sensible o semidisminuido)", "3,3,3": "5dism7dism (7ª disminuida)",
-    "4,6": "7m (sin 5ª)", "3,7": "m7m (sin 5ª)", "4,7": "M7m (sin 5ª)", "3,6": "dim7m (sin 5ª)",
+    "4,6": "M7m (sin 5ª)", "3,7": "m7m (sin 5ª)", "4,7": "M7m (sin 5ª)", "3,6": "dim7m (sin 5ª)",
     "2,4": "Sexta aumentada Italiana", "2,4,3": "Sexta aumentada Alemana", "4,2,4": "Sexta aumentada Francesa", "3,2,4": "Sexta aumentada Suiza",
     "4,6,4": "9M de dominante (sin 5ª)", "4,6,3": "7m9m Novena menor de dominante (sin 5ª)", "3,7,4": "m9M (sin 5ª)", "4,7,3": "M7M9M (sin 5ª)", 
     "4,3,3,4": "Novena mayor de dominante", 
@@ -1067,6 +1067,7 @@ const mapDominantes = {
     'La': 'Re',  'La#': 'Re#', 'Sib': 'Mib',
     'Si': 'Mi'
 };
+
 let globalResults = [];
 let globalTonalidadLocal = [];
 
@@ -1696,7 +1697,7 @@ if (res2 && res2.tipo === "Dominante sobre tónica") return [];
    
     const tieneDisonancia = res1.tipo.includes("7") || res1.tipo.includes("Novena") || res1.tipo.includes("M7") || res1.esSeptimaSinQuinta || res1.esNovena;
     if (!tieneDisonancia) return warnings;
-const esDominante1 = res1.tipo.includes("Dominante") || res1.tipo.includes("M7m") || res1.tipo === "7m (sin 5ª)";
+const esDominante1 = res1.tipo.includes("Dominante") || res1.tipo.includes("M7m") || res1.tipo === "M7m (sin 5ª)";
     const esPedal2 = res2 && res2.tipo === "Dominante sobre tónica";
     
     if (esDominante1 && esPedal2) return warnings;
@@ -2365,7 +2366,7 @@ function checkDirectDissonance(c1, c2, res2, esFuncional) {
     const tipo = res2.tipo.toLowerCase();
     
 
-    const esDominante = esFuncional || tipo.includes("dominante") || tipo.includes("mayor con 7ª menor") || res2.tipo.includes("m7m") || tipo === "7m (sin 5ª)" || tipo.includes("alemana");
+    const esDominante = esFuncional || tipo.includes("dominante") || tipo.includes("mayor con 7ª menor") || res2.tipo.includes("m7m") || tipo === "M7m (sin 5ª)" || tipo.includes("alemana");
 
     forEachVoicePair((v1, v2) => {
         if (!c1[v1] || !c2[v1] || !c1[v2] || !c2[v2]) return;
@@ -3029,7 +3030,7 @@ function esDominanteFuncional(acordeActual, resActual, chordIdx, results, struct
     if (resActual.rootPC === nextRes.rootPC && tipoActual === tipoSiguiente) {
         // Es el mismo acorde repetido → consideramos que la función dominante se prolonga
         // Solo necesitamos comprobar si el acorde actual es V o VII
-        const esTipoV = tipoActual.includes("Mayor") || tipoActual.includes("Dominante") || tipoActual === "7m (sin 5ª)" || 
+        const esTipoV = tipoActual.includes("Mayor") || tipoActual.includes("Dominante") || tipoActual === "M7m (sin 5ª)" || 
 (tipoActual.includes("9") && !tipoActual.includes("m9") && !tipoActual.includes("Maj9") && !tipoActual.includes("M9")) || 
 tipoActual.includes("Novena de Dominante") || tipoActual.includes("Novena menor de dominante") || tipoActual.includes("M7m") ||
 tipoActual === "7m9m Novena menor de dominante (sin 5ª)";
@@ -3046,7 +3047,7 @@ tipoActual === "7m9m Novena menor de dominante (sin 5ª)";
     // Si el acorde actual es V o VII, comprobar si la sensible resuelve correctamente
     const tipoActual2 = resActual.tipo || "";
     const esTipoV2 = tipoActual2.includes("Mayor") || tipoActual2.includes("Dominante") || 
-                     tipoActual2 === "7m (sin 5ª)" ||
+                     tipoActual2 === "M7m (sin 5ª)" ||
                      (tipoActual2.includes("9") && !tipoActual2.includes("m9") && !tipoActual2.includes("Maj9") && !tipoActual2.includes("M9")) ||
                      tipoActual2.includes("Novena de Dominante") || tipoActual2.includes("M7m");
     const esTipoVII2 = tipoActual2.includes("Disminuido") || tipoActual2.includes("Dism") || tipoActual2.includes("Semidisminuido");
@@ -3085,7 +3086,7 @@ function adaptarAnalisisParaReglas(resNuevo, chordActual, chordSiguiente, resSig
     let esFuncional = false;
     const tieneIntervalosDominante = 
         t.includes("M7m") || 
-        t === "7m (sin 5ª)" ||
+        t === "M7m (sin 5ª)" ||
         (t.includes("7") && !t.includes("M7") && !t.includes("m7") && !t.includes("Menor") && !t.includes("Maj7")) ||
         (resNuevo.esSeptimaSinQuinta && t.includes("Mayor") && !t.includes("Maj7")) ||
         t.includes("Disminuido") || 
@@ -3253,7 +3254,7 @@ function detectCadenceSequence(a1, a2, a3, r1, r2, r3, p1, p2, p3, mode, tonicPC
 
     if (d3 === "I") {
         const esInestable = r3.tipo.toLowerCase().includes("dominante") || 
-                            r3.tipo.includes("7m (sin 5ª)") || 
+                            r3.tipo.includes("M7m (sin 5ª)") || 
                             (r3.tipo.includes("Mayor") && r3.tipo.includes("7m")); 
         if (esInestable) return finalize("Final inestable (I7): Actúa como V7/IV, no hay reposo.");
     }
@@ -3630,7 +3631,7 @@ function _detectarTipoModulacion(
         }
         // Parar si encontramos la dominante de la tonalidad anterior
         const esDominanteVieja = (temp.rootPC === (currentTonicPC + 7) % 12) &&
-            (temp.tipo.includes("Mayor") || temp.tipo.includes("Dominante") || temp.tipo.includes("7m (sin 5ª)"));
+            (temp.tipo.includes("Mayor") || temp.tipo.includes("Dominante") || temp.tipo.includes("M7m (sin 5ª)"));
         if (esDominanteVieja) break;
 
         const notas  = _getChordPCs(tempChord);
@@ -6474,7 +6475,7 @@ if (retardoInfo && retardoInfo.tipo === 'retardo' && retardoInfo.vocesRetardo &&
     
     const tipo = res.tipo || "";
     const esNovena = tipo.includes("9") || tipo.includes("Novena") || tipo.includes("b9") || res.esNovena || res.esNovenaSinTercera;
-    const esDominante7 = (tipo.includes("Dominante") || tipo.includes("M7m") || tipo === "7m (sin 5ª)") && !esNovena; 
+    const esDominante7 = (tipo.includes("Dominante") || tipo.includes("M7m") || tipo === "M7m (sin 5ª)") && !esNovena; 
     const esSensibleTriada = (res.rootPC === globalSensiblePC) && !tipo.includes("7") && !esNovena;
     const esPedalDominante = (tipo === "Dominante sobre tónica");
     
@@ -6502,7 +6503,7 @@ if (!prevRes.error && prevRes.tipo === "Dominante sobre tónica" && bassNote.mid
     let functionalSensible = -1; 
     
     const tipoAcorde = res.tipo || "";
-  const esTipoV = tipo.includes("Mayor") || tipo.includes("Dominante") || tipo === "7m (sin 5ª)" || 
+  const esTipoV = tipo.includes("Mayor") || tipo.includes("Dominante") || tipo === "M7m (sin 5ª)" || 
 (tipo.includes("9") && !tipo.includes("m9") && !tipo.includes("Maj9") && !tipo.includes("M9")) || 
 tipo.includes("Novena de Dominante") || tipo.includes("M7m");
     const esTipoVII = tipoAcorde.includes("Disminuido") || tipoAcorde.includes("Dism") || tipoAcorde.includes("Semidisminuido");
@@ -6557,7 +6558,7 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
                 
                 const tipoSig = resNext.tipo || "";
 
-                const sigEsTipoV = tipoSig.includes("Mayor") || tipoSig.includes("Dominante") || tipoSig === "7m (sin 5ª)" || tipoSig.includes("Novena") || tipoSig.includes("M7m");
+                const sigEsTipoV = tipoSig.includes("Mayor") || tipoSig.includes("Dominante") || tipoSig === "M7m (sin 5ª)" || tipoSig.includes("Novena") || tipoSig.includes("M7m");
                 const sigEsTipoVII = tipoSig.includes("Disminuido") || tipoSig.includes("Dism") || tipoSig.includes("Semidisminuido");
                 
                 let targetDelSiguiente = -1;
@@ -6793,7 +6794,7 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
             } else if (esDesconocido) {
                 text = pref + i.num; 
             } else {
-                const esEstructuraDominante = tipo.includes("Dominante") || tipo.includes("M7m") || tipo.includes("M7m") || tipo === "7m (sin 5ª)" || esNovena;
+                const esEstructuraDominante = tipo.includes("Dominante") || tipo.includes("M7m") || tipo.includes("M7m") || tipo === "M7m (sin 5ª)" || esNovena;
 
                 if (isDominantFunction && esEstructuraDominante && i.num === 7) {
                     pref = "";
