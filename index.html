@@ -1038,7 +1038,7 @@ const voices = ['soprano', 'alto', 'tenor', 'bass'];
 const vNames = { soprano:'Soprano', alto:'Contralto', tenor:'Tenor', bass: 'Bajo' };
 
 const tiposAcorde = {
-    "4,3": "Mayor", "3,4": "Menor", "4,4": "Aumentado", "3,3": "Disminuido",
+    "4,3": "mayor", "3,4": "menor", "4,4": "aumentado", "3,3": "disminuido",
     "4,3,4": "M7M", "4,3,3": "M7m", "4,4,3": "5A7M", "3,4,3": "m7m", "3,4,4": "m7M",
     "3,3,4": "5dism7m (7ª de sensible o semidisminuido)", "3,3,3": "5dism7dism (7ª disminuida)",
     "4,6": "M7m (sin 5ª)", "3,7": "m7m (sin 5ª)", "4,7": "M7m (sin 5ª)", "3,6": "dim7m (sin 5ª)",
@@ -1640,12 +1640,12 @@ function calculateInterval(n1, n2) {
     if ([0, 3, 4].includes(normalStep)) { 
         if (semitones === (standardSemitones[normalStep] + octaveOffset)) quality = "Justa";
         else if (semitones > (standardSemitones[normalStep] + octaveOffset)) quality = "Aumentada";
-        else quality = "Disminuida";
+        else quality = "disminuida";
     } else { 
-        if (semitones === (standardSemitones[normalStep] + octaveOffset)) quality = "Mayor";
-        else if (semitones === (standardSemitones[normalStep] + octaveOffset - 1)) quality = "Menor";
+        if (semitones === (standardSemitones[normalStep] + octaveOffset)) quality = "mayor";
+        else if (semitones === (standardSemitones[normalStep] + octaveOffset - 1)) quality = "menor";
         else if (semitones > (standardSemitones[normalStep] + octaveOffset)) quality = "Aumentada";
-        else quality = "Disminuida";
+        else quality = "disminuida";
     }
     
     if (isNaN(stepDiff)) return null;
@@ -1785,7 +1785,7 @@ function checkSeventhPreparation(c1, c2, res2, esFuncional) {
     const tipo = res2.tipo || "", rootPC = res2.rootPC;
     
     
-    const tieneSeptima = tipo.includes("7") || tipo.includes("Novena") || tipo.includes("M7") || tipo.includes("m7") || res2.esSeptimaSinQuinta || tipo.includes("Disminuido") || tipo.includes("Semidisminuido");
+    const tieneSeptima = tipo.includes("7") || tipo.includes("Novena") || tipo.includes("M7") || tipo.includes("m7") || res2.esSeptimaSinQuinta || tipo.includes("disminuido") || tipo.includes("semidisminuido");
     
     if (!tieneSeptima) return [];
 
@@ -2174,7 +2174,7 @@ function checkParallelsStrict(c1, c2, res1, res2, chordIndex, localTonic, localM
         if (step === 1 || step === 6) return true;
         
         
-        if (intData.fullName.includes("Aumentada") || intData.fullName.includes("Disminuida")) return true;
+        if (intData.fullName.includes("Aumentada") || intData.fullName.includes("disminuida")) return true;
         
         
         if (vLow === 'bass' && step === 3 && intData.fullName === "Justa") return true;
@@ -2246,7 +2246,7 @@ function checkParallelsStrict(c1, c2, res1, res2, chordIndex, localTonic, localM
                 });
             
             }
-            else if (int1.fullName.includes("Disminuida") && int2.fullName === "Justa") {
+            else if (int1.fullName.includes("disminuida") && int2.fullName === "Justa") {
     if (esExcepcionDesiguales) {
         infos.push(`Quintas desiguales permitidas (dism->Justa) en ${vNames[v1]}-${vNames[v2]}.`);
     } else {
@@ -2452,7 +2452,7 @@ if (!localTonic || !localMode) return [];
     const rootPC = res2.rootPC;
     const tipoSafe = (res2.tipo || "").toLowerCase();
     let thirdInterval = 4; 
-    if (tipoSafe.includes("menor") || tipoSafe.includes("disminuido") || (res2.tipo && res2.tipo.includes("Dism"))) thirdInterval = 3;
+    if (tipoSafe.includes("menor") || tipoSafe.includes("disminuido") || (res2.tipo && res2.tipo.includes("dism"))) thirdInterval = 3;
     
     const thirdPC = (rootPC + thirdInterval) % 12;
     const fifthPC = (rootPC + 7) % 12;
@@ -2505,7 +2505,7 @@ function checkStepwiseContraryMotion(c1, c2, res1, res2, analysis1, localTonic, 
     const warnings = [];
 
     if (!c1 || !c2 || !res1 || !res2 || !analysis1 || res1.error || res2.error || !res1.estadoTexto || !res2.estadoTexto) return [];
-    const tiposPermitidos = ["Mayor", "Menor"];
+    const tiposPermitidos = ["mayor", "menor"];
     if (!tiposPermitidos.includes(res1.tipo) || !tiposPermitidos.includes(res2.tipo)) {
         return [];
     }
@@ -2559,7 +2559,7 @@ function checkMelodicIntervalsStrict(c1, c2, allowDim3 = false, c3 = null, chord
             warnings.push(`Salto aumentado en ${vNames[v]}.`);
             hasError = true;
         }
-        if (int.fullName.includes("Disminuida") && int.stepDiff >= 3) {
+        if (int.fullName.includes("disminuida") && int.stepDiff >= 3) {
             let justificado = false;
             if (c3 && c3[v]) {
                 const diffAlTercero = c3[v].midi - c2[v].midi;
@@ -2959,7 +2959,7 @@ function verificarPedalDominante(chordParaAnalisis, bajoParaAnalisis, nextChordO
     if (upperRes.error) return upperRes;
 
     const t = upperRes.tipo;
-    const esEstructuraDominante = (t.includes("Mayor") || t.includes("Dominante") || t.includes("7") || t.toLowerCase().includes("disminuido"));
+    const esEstructuraDominante = (t.includes("mayor") || t.includes("Dominante") || t.includes("7") || t.toLowerCase().includes("disminuido"));
     
     if (esEstructuraDominante) {
         const vBass = valorCromatico[normalizarNota(bajoParaAnalisis.logicName)];
@@ -3030,13 +3030,12 @@ function esDominanteFuncional(acordeActual, resActual, chordIdx, results, struct
     if (resActual.rootPC === nextRes.rootPC && tipoActual === tipoSiguiente) {
         // Es el mismo acorde repetido → consideramos que la función dominante se prolonga
         // Solo necesitamos comprobar si el acorde actual es V o VII
-        const esTipoV = tipoActual.includes("Mayor") || tipoActual.includes("Dominante") || tipoActual === "M7m (sin 5ª)" || 
+        const esTipoV = tipoActual.includes("mayor") || tipoActual.includes("Dominante") || tipoActual === "M7m (sin 5ª)" || 
 (tipoActual.includes("9") && !tipoActual.includes("m9") && !tipoActual.includes("Maj9") && !tipoActual.includes("M9")) || 
 tipoActual.includes("Novena de Dominante") || tipoActual.includes("Novena menor de dominante") || tipoActual.includes("M7m") ||
 tipoActual === "7m9m Novena menor de dominante (sin 5ª)";
 
-        const esTipoVII = tipoActual.includes("Disminuido") || tipoActual.includes("Dism") || tipoActual.includes("Semidisminuido");
-        
+        const esTipoVII = tipoActual.includes("disminuido") || tipoActual.includes("5dism7m (7ª de sensible o semidisminuido)") || tipoActual.includes("5dism7dism (7ª disminuida)") || tipoActual.includes("dim7m (sin 5ª)") || tipoActual.includes(" 7m5dism (sin 3ª)") || tipoActual.includes(" 5dism7dism (sin 3ª)") || tipoActual.includes(" 7m5dism (sin 3ª)");
         if (esTipoV || esTipoVII) {
             // Es dominante (V o VII), así que consideramos que tiene función dominante
             // La resolución real se comprobará en el siguiente acorde real diferente
@@ -3046,11 +3045,11 @@ tipoActual === "7m9m Novena menor de dominante (sin 5ª)";
     
     // Si el acorde actual es V o VII, comprobar si la sensible resuelve correctamente
     const tipoActual2 = resActual.tipo || "";
-    const esTipoV2 = tipoActual2.includes("Mayor") || tipoActual2.includes("Dominante") || 
+    const esTipoV2 = tipoActual2.includes("mayor") || tipoActual2.includes("Dominante") || 
                      tipoActual2 === "M7m (sin 5ª)" ||
                      (tipoActual2.includes("9") && !tipoActual2.includes("m9") && !tipoActual2.includes("Maj9") && !tipoActual2.includes("M9")) ||
                      tipoActual2.includes("Novena de Dominante") || tipoActual2.includes("M7m");
-    const esTipoVII2 = tipoActual2.includes("Disminuido") || tipoActual2.includes("Dism") || tipoActual2.includes("Semidisminuido");
+    const esTipoVII2 = tipoActual2.includes("disminuido") || tipoActual2.includes("5dism7m (7ª de sensible o semidisminuido)") || tipoActual2.includes("5dism7dism (7ª disminuida)") || tipoActual2.includes("dim7m (sin 5ª)") || tipoActual2.includes(" 7m5dism (sin 3ª)") || tipoActual2.includes(" 5dism7dism (sin 3ª)") || tipoActual2.includes(" 7m5dism (sin 3ª)");
     
     if (esTipoV2 || esTipoVII2) {
         const sensiblePC = esTipoV2 ? (resActual.rootPC + 4) % 12 : resActual.rootPC;
@@ -3087,11 +3086,11 @@ function adaptarAnalisisParaReglas(resNuevo, chordActual, chordSiguiente, resSig
     const tieneIntervalosDominante = 
         t.includes("M7m") || 
         t === "M7m (sin 5ª)" ||
-        (t.includes("7") && !t.includes("M7") && !t.includes("m7") && !t.includes("Menor") && !t.includes("Maj7")) ||
-        (resNuevo.esSeptimaSinQuinta && t.includes("Mayor") && !t.includes("Maj7")) ||
-        t.includes("Disminuido") || 
-        t.includes("Dism") || 
-        t.includes("Semidisminuido") ||
+        (t.includes("7") && !t.includes("M7") && !t.includes("m7") && !t.includes("menor") && !t.includes("Maj7")) ||
+        (resNuevo.esSeptimaSinQuinta && t.includes("mayor") && !t.includes("Maj7")) ||
+        t.includes("disminuido") || 
+        t.includes("dism") || 
+        t.includes("semidisminuido") ||
         (t.includes("9") && !t.includes("m9") && !t.includes("Maj9") && !t.includes("M9")) ||
         t.includes("Novena de Dominante");
     if (tieneIntervalosDominante && chordActual && chordSiguiente && resSiguiente) {
@@ -3111,14 +3110,14 @@ function adaptarAnalisisParaReglas(resNuevo, chordActual, chordSiguiente, resSig
             quality = "major"; 
         }
     }
-    let isDim = t.includes("Disminuido") || t.includes("Dism") || t.includes("dim") || t.includes("Semidisminuido");
-    let isMinor = t.includes("Menor") || t.includes("m7") || isDim;
+    let isDim = t.includes("disminuido") || t.includes("dism") || t.includes("dim") || t.includes("semidisminuido");
+    let isMinor = t.includes("menor") || t.includes("m7") || isDim;
     let useUpperCase = !isMinor;
     if (quality === "unknown") {
-        if (tipoParaQuality.includes("Mayor") || tipoParaQuality.includes("M7M")) quality = "major";
-        else if (tipoParaQuality.includes("Menor") || tipoParaQuality.includes("m7")) quality = "minor";
+        if (tipoParaQuality.includes("mayor") || tipoParaQuality.includes("M7M")) quality = "major";
+        else if (tipoParaQuality.includes("menor") || tipoParaQuality.includes("m7")) quality = "minor";
         else if (isDim) quality = "dim";
-        else if (t.includes("Aumentado")) quality = "aug";
+        else if (t.includes("aumentado")) quality = "aug";
         else if (t.includes("Sexta aumentada")) quality = "Aug6";
     }
 
@@ -3145,7 +3144,7 @@ function adaptarAnalisisParaReglas(resNuevo, chordActual, chordSiguiente, resSig
     if (!useUpperCase) numeral = numeral.toLowerCase();   
     let suffix = "";
     if (isDim) suffix = "°";
-    else if (t.includes("Aumentado")) suffix = "+";
+    else if (t.includes("aumentado")) suffix = "+";
     let accSymbol = entry.a === "b" ? "♭" : (entry.a === "#" ? "♯" : "");
     let formattedDegree = `(${accSymbol}${numeral}${suffix})`;
     let degreeRules = entry.a + entry.r; 
@@ -3167,7 +3166,7 @@ if (esFuncional && chordSiguiente && resSiguiente && !resSiguiente.error) {
             
             if (resSiguiente.rootPC === targetIntrinsecoPC) {
                 const tipoDestino = resSiguiente.tipo || "";
-                if (tipoDestino.includes("Menor") || tipoDestino.includes("Dism")) {
+                if (tipoDestino.includes("menor") || tipoDestino.includes("dism")) {
                     gradoDestino = gradoDestino.toLowerCase();
                 }
             } else {
@@ -3234,7 +3233,7 @@ function detectCadenceSequence(a1, a2, a3, r1, r2, r3, p1, p2, p3, mode, tonicPC
         let finalMsg = isProlongation ? `${msg} (con prolongación final)` : msg;
         
         
-        if (mode === 'minor' && d3 === "I" && r3 && r3.tipo.includes("Mayor") && !msg.includes("inestable")) {
+        if (mode === 'minor' && d3 === "I" && r3 && r3.tipo.includes("mayor") && !msg.includes("inestable")) {
             finalMsg += " (C. de Picardía)";
         }
         
@@ -3255,7 +3254,7 @@ function detectCadenceSequence(a1, a2, a3, r1, r2, r3, p1, p2, p3, mode, tonicPC
     if (d3 === "I") {
         const esInestable = r3.tipo.toLowerCase().includes("dominante") || 
                             r3.tipo.includes("M7m (sin 5ª)") || 
-                            (r3.tipo.includes("Mayor") && r3.tipo.includes("7m")); 
+                            (r3.tipo.includes("mayor") && r3.tipo.includes("7m")); 
         if (esInestable) return finalize("Final inestable (I7): Actúa como V7/IV, no hay reposo.");
     }
 
@@ -3315,7 +3314,7 @@ function detectCadenceSequence(a1, a2, a3, r1, r2, r3, p1, p2, p3, mode, tonicPC
         return finalize("Cadencia Rota (V -> sustituto de tónica)");
     }
         if (d3 === "V" || d3.startsWith("V/")) {
-        if (r3.tipo.includes("Menor")) {
+        if (r3.tipo.includes("menor")) {
             return finalize("Final sobre acorde menor: No es Semicadencia (falta sensible).");
         }
         if (d3.startsWith("V/")) {
@@ -3477,8 +3476,8 @@ function _calcularTargetPC(res, tipo, structuralChords, chordIdx1based, tonActua
         return { targetPC: (bassPC + 4) % 12, targetEsp: "" };
     }
 
-    // --- Acordes enarmónicos: Aumentado, Disminuido 7, Dism7dism ---
-    if (tipo === "Aumentado" || tipo.includes("Dism7dism") || tipo.includes("Disminuido 7")) {
+    // --- Acordes enarmónicos: Aumentado, 7ª disminuida---
+    if (tipo === "aumentado" || tipo.includes("5dism7dism (sin 3ª)") || tipo.includes("5dism7dism (7ª disminuida)")) {
         const origScale   = _buildScale(currentTonicPC, tonActual.mode);
         const notasAcorde = _getChordPCs(structuralChords[`chord${chordIdx1based}`]);
         const candidatos  = [...new Set(notasAcorde.map(pc => (pc + 1) % 12))]
@@ -3488,7 +3487,7 @@ function _calcularTargetPC(res, tipo, structuralChords, chordIdx1based, tonActua
 
         const rootPC_enh    = res.rootPC !== undefined ? res.rootPC : -1;
         const candPrioritario = rootPC_enh >= 0
-            ? (tipo === "Aumentado" ? (rootPC_enh + 9) % 12 : (rootPC_enh + 1) % 12)
+            ? (tipo === "aumentado" ? (rootPC_enh + 9) % 12 : (rootPC_enh + 1) % 12)
             : -1;
 
         const lookahead = Math.min(results.length, chordIdx1based + 5); // i + 6 en 0-based
@@ -3520,7 +3519,7 @@ function _calcularTargetPC(res, tipo, structuralChords, chordIdx1based, tonActua
 
 
     // --- Tríada Disminuida (viiº) ---
-if (tipo === "Disminuido" || tipo === "Dism") {
+if (tipo === "disminuido" || tipo === "dism") {
     const targetPC = (res.rootPC + 1) % 12;
     // Buscar el nombre en español del targetPC (p.ej. "Re")
     const targetEsp = _PC_NAME_ES[targetPC];
@@ -3557,7 +3556,7 @@ function _detectarTipoModulacion(
     // ── Paso 1: Filtrar tríadas mayores / disminuidas que sean totalmente diatónicas ──
     const notasDelAcorde       = _getChordPCs(structuralChords[`chord${i + 1}`]);
     const esTotalmenteDiatonico = notasDelAcorde.every(pc => oldScalePCs.includes(pc));
-    if (esTotalmenteDiatonico && (tipo === "Mayor" || tipo === "Disminuido" || tipo === "Mayor (sin 5ª)")) {
+    if (esTotalmenteDiatonico && (tipo === "mayor" || tipo === "disminuido" || tipo === "Mayor (sin 5ª)")) {
         return null; // Descartar: es diatónico en la tonalidad actual
     }
 
@@ -3631,7 +3630,7 @@ function _detectarTipoModulacion(
         }
         // Parar si encontramos la dominante de la tonalidad anterior
         const esDominanteVieja = (temp.rootPC === (currentTonicPC + 7) % 12) &&
-            (temp.tipo.includes("Mayor") || temp.tipo.includes("Dominante") || temp.tipo.includes("M7m (sin 5ª)"));
+            (temp.tipo.includes("mayor") || temp.tipo.includes("Dominante") || temp.tipo.includes("M7m (sin 5ª)"));
         if (esDominanteVieja) break;
 
         const notas  = _getChordPCs(tempChord);
@@ -3699,7 +3698,7 @@ function _detectarTipoModulacion(
     // ── Paso 7: Detectar enarmónica (sobre Directa o Cromática) ──
     if (tipoMod === "Directa" || tipoMod === "Cromática") {
         const esEnharmonizable =
-            (tipoMod === "Directa" && (tipo === "Aumentado" || tipo.includes("Dism7dism") || tipo.includes("Disminuido 7")))
+            (tipoMod === "Directa" && (tipo === "aumentado" || tipo.includes("5dism7dism (7ª disminuida)")|| tipo.includes("5dism7dism (sin 3ª)")  ))
             || tipo.includes("Sexta aumentada Alemana")
             || tipo.includes("Sexta aumentada Suiza");
 
@@ -3709,9 +3708,9 @@ function _detectarTipoModulacion(
             if (pcsMod.includes(sensiblePC)) {
                 tipoMod = "Enarmónica";
                 const sensibleNombre = _PC_NAME_ES[sensiblePC];
-                if (tipo === "Aumentado") {
+                if (tipo === "aumentado") {
                     pivoteDesc = ` — Acorde ${i + 1}: tríada aumentada III (modo menor), ${sensibleNombre} reinterpretada como sensible`;
-                } else if (tipo.includes("Dism7dism") || tipo.includes("Disminuido 7")) {
+                } else if (tipo.includes("5dism7dism (7ª disminuida)") || tipo.includes("5dism7dism (sin 3ª)")) {
                     const modoDestino = newMode === 'minor' ? 'menor' : 'mayor';
                     pivoteDesc = ` — Acorde ${i + 1}: 7ª disminuida, ${sensibleNombre} reinterpretada como sensible de ${modoDestino}`;
                 } else {
@@ -3833,10 +3832,10 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         // Filtro rápido: solo acordes con función dominante potencial
         const esDomPotencial =
             tipo.includes("Dominante") || tipo.includes("M7m") || tipo.includes("M7m") ||
-            tipo.includes("Disminuido") || tipo.includes("Sexta aumentada") ||
-            (tipo.includes("Mayor") && !tipo.includes("M7M") && !tipo.includes("Maj7")) ||
-            (tipo.includes("7") && !tipo.includes("Menor") && !tipo.includes("m7") && !tipo.includes("M7M") && !tipo.includes("Maj7")) ||
-            tipo === "Aumentado" ||
+            tipo.includes("disminuido") || tipo.includes("Sexta aumentada") ||
+            (tipo.includes("mayor") && !tipo.includes("M7M") && !tipo.includes("Maj7")) ||
+            (tipo.includes("7") && !tipo.includes("menor") && !tipo.includes("m7") && !tipo.includes("M7M") && !tipo.includes("Maj7")) ||
+            tipo === "aumentado" ||
             (tipo.includes("9") && !tipo.includes("m9") && !tipo.includes("Maj9") && !tipo.includes("M9")) ||
             tipo.includes("Novena de Dominante");
         if (!esDomPotencial) continue;        
@@ -3846,13 +3845,13 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         let { targetPC, targetEsp } = targetData;
 
         // Filtro especial para tríadas mayores simples: verificar resolución efectiva
-        if (tipo === "Mayor" || tipo === "Mayor (sin 5ª)") {
+        if (tipo === "mayor" || tipo === "Mayor (sin 5ª)") {
             const rotaPC  = (targetPC + 9) % 12;
             const rotamPC = (targetPC + 8) % 12;
             const esResolucionDirecta = (nextRes.rootPC === targetPC);
             const esResolucionRota    = (nextRes.rootPC === rotaPC || nextRes.rootPC === rotamPC);
             const esSiguienteInestable = nextRes.tipo.includes("Sexta") || nextRes.tipo.includes("7") ||
-                                         nextRes.tipo.includes("Dism") || nextRes.tipo.includes("Aumentado");
+                                         nextRes.tipo.includes("dism") || nextRes.tipo.includes("aumentado");
             const previewScale = [
                 ..._INTERVALS_MAJOR.map(n => (targetPC + n) % 12),
                 ..._INTERVALS_MINOR.map(n => (targetPC + n) % 12)
@@ -3893,7 +3892,7 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
                 let confirmaMenor = false;
                 for (let k = i + 1; k < Math.min(results.length, i + 6); k++) {
                     const rf = results[k];
-                    if (!rf.error && rf.rootPC === currentTonicPC && rf.tipo.includes("Menor")) {
+                    if (!rf.error && rf.rootPC === currentTonicPC && rf.tipo.includes("menor")) {
                         confirmaMenor = true; break;
                     }
                 }
@@ -4423,7 +4422,7 @@ function _detectarFigurasEspeciales(results, adaptations, successes) {
         // Sexta napolitana: bII en 1ª inversión → V o I6/4
         const esNapolitana =
             currentAdapt.degree === "bII" &&
-            currentRes.tipo.includes("Mayor") &&
+            currentRes.tipo.includes("mayor") &&
             currentRes.estadoTexto && currentRes.estadoTexto.includes("1ª Inversión") &&
             (
                 nextAdapt.degree === "V" ||
@@ -4825,7 +4824,7 @@ function evaluarReglasArmonicas(results, adaptations, structuralChords, parsed, 
             const esMismo  = !currentRes.error && !nextRes.error &&
                 currentRes.rootPC === nextRes.rootPC && (
                     currentRes.tipo === nextRes.tipo ||
-                    (currentRes.tipo === "Mayor" && nextRes.tipo === "M7m") ||
+                    (currentRes.tipo === "mayor" && nextRes.tipo === "M7m") ||
                     (!esPedal1 && esPedal2)
                 );
 
@@ -4953,7 +4952,7 @@ if (adapt.esDominanteFuncional) {
     let target = "";
     const tipo = r.tipo || "";
     // Para tríadas disminuidas, el destino es un semitono por encima de la fundamental
-    if (tipo === "Disminuido" || tipo === "Dism") {
+    if (tipo === "disminuido" || tipo === "dism") {
         const targetPC = (r.rootPC + 1) % 12;
         target = _PC_NAME_ES[targetPC] || "";
     } else {
@@ -5074,7 +5073,7 @@ function detectarSeriesSextasLogica(results, structuralChords, chordStartBeats, 
     function esPrimeraInversionTriada(res) {
         if (!res || res.error) return false;
         const t = res.tipo || "";
-        const esTríada = (t === "Mayor" || t === "Menor" || t === "Disminuido" || t === "Aumentado" || t === "Mayor (sin 5ª)" || t === "Menor (sin 5ª)");
+        const esTríada = (t === "mayor" || t === "menor" || t === "disminuido" || t === "aumentado" || t === "Mayor (sin 5ª)" || t === "Menor (sin 5ª)");
         return esTríada && res.estadoTexto && res.estadoTexto.includes("1ª Inversión");
     }
 
@@ -6503,10 +6502,10 @@ if (!prevRes.error && prevRes.tipo === "Dominante sobre tónica" && bassNote.mid
     let functionalSensible = -1; 
     
     const tipoAcorde = res.tipo || "";
-  const esTipoV = tipo.includes("Mayor") || tipo.includes("Dominante") || tipo === "M7m (sin 5ª)" || 
+  const esTipoV = tipo.includes("mayor") || tipo.includes("Dominante") || tipo === "M7m (sin 5ª)" || 
 (tipo.includes("9") && !tipo.includes("m9") && !tipo.includes("Maj9") && !tipo.includes("M9")) || 
 tipo.includes("Novena de Dominante") || tipo.includes("M7m");
-    const esTipoVII = tipoAcorde.includes("Disminuido") || tipoAcorde.includes("Dism") || tipoAcorde.includes("Semidisminuido");
+    const esTipoVII = tipoAcorde.includes("disminuido") || tipoAcorde.includes("dism") || tipoAcorde.includes("semidisminuido");
 
     
     if (esTipoV) {
@@ -6558,8 +6557,8 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
                 
                 const tipoSig = resNext.tipo || "";
 
-                const sigEsTipoV = tipoSig.includes("Mayor") || tipoSig.includes("Dominante") || tipoSig === "M7m (sin 5ª)" || tipoSig.includes("Novena") || tipoSig.includes("M7m");
-                const sigEsTipoVII = tipoSig.includes("Disminuido") || tipoSig.includes("Dism") || tipoSig.includes("Semidisminuido");
+                const sigEsTipoV = tipoSig.includes("mayor") || tipoSig.includes("Dominante") || tipoSig === "M7m (sin 5ª)" || tipoSig.includes("Novena") || tipoSig.includes("M7m");
+                const sigEsTipoVII = tipoSig.includes("disminuido") || tipoSig.includes("dism") || tipoSig.includes("semidisminuido");
                 
                 let targetDelSiguiente = -1;
                 if (sigEsTipoV) targetDelSiguiente = (resNext.rootPC + 5) % 12;
@@ -6630,7 +6629,7 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
         
         let esSensibleNota = (note.pitchClass === functionalSensible) && isDominantFunction;
         
-        if (esSensibleNota && tipo.includes("Mayor") && !esDominante7 && !esNovena && !tipo.includes("7")) {
+        if (esSensibleNota && tipo.includes("mayor") && !esDominante7 && !esNovena && !tipo.includes("7")) {
             esSensibleNota = false;
         }
 
@@ -6638,7 +6637,7 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
             num: rawNum,
             prefix: prefix,
             isSensible: esSensibleNota,
-            isDiminished: intData.fullName.includes("Disminuida"),
+            isDiminished: intData.fullName.includes("disminuida"),
             hasAccidental: (prefix !== ""),
             esVozRetardo: esVozRetardo   
         });
@@ -6683,8 +6682,8 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
         }
             
             
-          else  if (tipo.includes("Disminuido") || tipo.includes("Disminuida") || tipo.includes("Dism") || tipo.includes("Semidisminuido")) {
-                 const esCuatriada = tipo.includes("7") || tipo.includes("Dism7") || tipo.includes("Semidisminuido");
+          else  if (tipo.includes("disminuido") || tipo.includes("disminuida") || tipo.includes("dism") || tipo.includes("semidisminuido")) {
+                 const esCuatriada = tipo.includes("7") || tipo.includes("dism7") || tipo.includes("semidisminuido");
                  
                  if (inv === 0) { 
                     
@@ -6708,7 +6707,7 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
                  }
                  else if (inv === 3) {
                      
-                     if (tipo.includes("Semidisminuido") || tipo.includes("Dism7m")) { 
+                     if (tipo.includes("semidisminuido") || tipo.includes("dism7m")) { 
                          if (i.num === 4 || i.num === 2) show = true; 
                      } else { 
                          
@@ -6778,8 +6777,8 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
         }
 
         if (inv === 0 && (tipo.includes("7") || res.esSeptimaSinQuinta) && i.num === 5) {
-    const esSeptimaDisminuida = tipo.includes("dism7dism") || tipo.includes("Disminuido 7");
-    const esSemidisminuido = tipo.includes("Semidisminuido") || tipo.includes("5dism7m");
+    const esSeptimaDisminuida = tipo.includes("5dism7dism (7ª disminuida)") || tipo.includes("5dism7dism (sin 3ª)");
+    const esSemidisminuido = tipo.includes("semidisminuido") || tipo.includes("5dism7m");
     if (!esSemidisminuido) {
         show = false;
     }
@@ -6787,7 +6786,6 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
         if (show) {
             let pref = "";
                         pref = mapAccidental(i.prefix, 'symbol');
-
 
             if (isHeldResolution) {
                 text = "-";
@@ -6871,7 +6869,7 @@ tipo.includes("Novena de Dominante") || tipo.includes("M7m");
                         else prefR = realAccR.replace("##","x").replace("bb","bb").replace("#","♯").replace("b","♭");
                         if (note.userAcc === 'n') prefR = "♮";
                     }
-                    if ((num === 7 || num === 5) && intData.fullName.includes("Disminuida")) {
+                    if ((num === 7 || num === 5) && intData.fullName.includes("disminuida")) {
                         resStr = "-" + num + "-";
                     } else if (num === 3 && prefR) {
                         resStr = prefR;
@@ -7972,10 +7970,10 @@ function solveBestVoicing(chordPCs, rootPC, fixedVoice, fixedMidi, prevChordRaw,
     }
 
     const intervals = chordPCs.map(pc => (pc - rootPC + 12) % 12);
-    let tipoAcordeSimulado = "Mayor"; 
-    if (intervals.includes(3)) tipoAcordeSimulado = "Menor";
+    let tipoAcordeSimulado = "mayor"; 
+    if (intervals.includes(3)) tipoAcordeSimulado = "menor";
     if (intervals.includes(10) || intervals.includes(11)) tipoAcordeSimulado += " con 7ª";
-    if (intervals.includes(6) && intervals.includes(3)) tipoAcordeSimulado = "Disminuido";
+    if (intervals.includes(6) && intervals.includes(3)) tipoAcordeSimulado = "disminuido";
 
     let bestVoicing = null;
     let minPenalty = Number.MAX_SAFE_INTEGER;
