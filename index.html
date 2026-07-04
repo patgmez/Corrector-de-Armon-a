@@ -558,6 +558,12 @@ function cdnFallback(elScript, urlFallback) {
         <option value="4/2">4/2</option>
     </select>
 </div>    
+<div style="display:flex; align-items:center; gap:8px; margin-left:10px;">
+    <label for="tempo-slider" style="font-size:0.85rem; color:#cbd5e1;">Tempo:</label>
+    <input type="range" id="tempo-slider" min="40" max="200" value="80" step="5"
+           style="width:80px; cursor:pointer; accent-color:#3b82f6;">
+    <span id="tempo-display" style="font-size:0.85rem; color:#60a5fa; min-width:30px;">80</span>
+</div>
                 <div class="dropdown-item" id="barline-menu-item" onclick="setFirstBarline()">
                     <svg viewBox="0 0 24 24" style="width:16px; height:16px; margin-right:8px; fill:currentColor;"><path d="M11 5h2v14h-2z"/></svg>
                     Anacrusa
@@ -985,14 +991,14 @@ const vNames = { soprano:'Soprano', alto:'Contralto', tenor:'Tenor', bass: 'Bajo
 
 const tiposAcorde = {
     "4,3": "mayor", "3,4": "menor", "4,4": "aumentado", "3,3": "disminuido",
+     "4": "Mayor (sin 5ª)", "3": "Menor (sin 5ª)",
     "4,3,4": "M7M", "4,3,3": "M7m", "4,4,3": "5A7M", "3,4,3": "m7m", "3,4,4": "m7M",
     "3,3,4": "5dism7m (7ª de sensible o semidisminuido)", "3,3,3": "5dism7dism (7ª disminuida)",
+    "6,4":"7m5dism (sin 3ª)", "6,3":"5dism7dism (sin 3ª)", "6,4,2": "7m5dism (sin 3ª)",
     "4,6": "M7m (sin 5ª)", "3,7": "m7m (sin 5ª)", "4,7": "M7M (sin 5ª)", "3,6": "dim7m (sin 5ª)",
     "2,4": "Sexta aumentada Italiana", "2,4,3": "Sexta aumentada Alemana", "4,2,4": "Sexta aumentada Francesa", "3,2,4": "Sexta aumentada Suiza",
     "4,6,4": "9M de dominante (sin 5ª)", "4,6,3": "7m9m Novena menor de dominante (sin 5ª)", "3,7,4": "m9M (sin 5ª)", "4,7,3": "M7M9M (sin 5ª)", 
     "4,3,3,4": "Novena mayor de dominante", 
-    "6,4":"7m5dism (sin 3ª)", "6,3":"5dism7dism (sin 3ª)", "6,4,2": "7m5dism (sin 3ª)",
-    "4": "Mayor (sin 5ª)", "3": "Menor (sin 5ª)",
     "4,3,4,3": "M7M9M Novena mayor", 
     "3,4,3,4": "m7m9m Novena menor", 
     "4,3,3,3": "Novena menor de dominante"
@@ -5962,15 +5968,14 @@ if (cipherMode === 'baroque') {
     }
     
     const scoreContainer = document.querySelector('.score-container');
-    let prevScroll = 0;
-    let wasAtEnd = false;
-    
-    if (scoreContainer) {
-        prevScroll = scoreContainer.scrollLeft;
-        if (scoreContainer.scrollWidth - (scoreContainer.scrollLeft + scoreContainer.clientWidth) < 20) {
-            wasAtEnd = true;
-        }
+let scrollRatio = 0;
+
+if (scoreContainer) {
+    const maxScroll = scoreContainer.scrollWidth - scoreContainer.clientWidth;
+    if (maxScroll > 0) {
+        scrollRatio = scoreContainer.scrollLeft / maxScroll;
     }
+}
     
     ABCJS.renderAbc("score", abc, {
         scale: 1.1,
@@ -6023,12 +6028,12 @@ const chordsPerMeasure = (parseInt(parts[0]) / parseInt(parts[1])) * 4;
         },
         renderSuccess: function() {
             if (scoreContainer) {
-                if (wasAtEnd) {
-                    scoreContainer.scrollLeft = scoreContainer.scrollWidth;
-                } else {
-                    scoreContainer.scrollLeft = prevScroll;
-                }
-            }
+    const maxScroll = scoreContainer.scrollWidth - scoreContainer.clientWidth;
+    if (maxScroll > 0) {
+        const targetScroll = scrollRatio * maxScroll;
+        scoreContainer.scrollLeft = targetScroll;
+    }
+}
             setTimeout(() => { selectCurrentNote(); updateScrollIndicators(); initNoteDragging(); updateTieButton(); }, 100);
         }
     });
@@ -6089,7 +6094,12 @@ document.addEventListener('DOMContentLoaded', () => {
     createPiano();
     setAccidental('');
     renderScore();
-
+const tempoSlider = document.getElementById('tempo-slider');
+const tempoDisplay = document.getElementById('tempo-display');
+tempoSlider.addEventListener('input', function() {
+    currentTempo = parseInt(this.value);
+    tempoDisplay.textContent = currentTempo;
+});
     document.getElementById('analyze-btn').addEventListener('click', analyzeHarmony);
     
     document.getElementById('play-btn').addEventListener('click', playHarmony);
@@ -6838,7 +6848,7 @@ function parseAbcToState(abc) {
         }
 
         if (currentV && voicesData[currentV] !== undefined) {
-            if (!cleanLine.startsWith('%') && !cleanLine.match(/^[A-Z]:/)) {
+            if (!cleanLine.startsWith('%') && !cleanLine.match(/^[A-Z]:\s*/)) {
                 cleanLine = cleanLine.replace(/\b[a-zA-Z]+=(".*?"|[^ \]]*)/g, '');
                 cleanLine = cleanLine.replace(/[\[\]]/g, '');
                 if (cleanLine.trim()) voicesData[currentV] += cleanLine + " ";
