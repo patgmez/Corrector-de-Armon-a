@@ -2948,7 +2948,7 @@ function adaptarAnalisisParaReglas(resNuevo, chordActual, chordSiguiente, resSig
     if (esFuncional && chordSiguiente && resSiguiente && !resSiguiente.error) {
         const dominantOfTonicPC = (tonicPC + 7) % 12;
         const sensibleOfTonicPC = (tonicPC + 11) % 12;
-        if (rootPC !== dominantOfTonicPC && rootPC !== sensibleOfTonicPC) {
+        if (rootPC !== dominantOfTonicPC && (rootPC !== sensibleOfTonicPC || !isDim)) {
             let targetIntrinsecoPC = isDim ? (rootPC + 1) % 12 : (rootPC + 5) % 12;
             const intervalDestino = (targetIntrinsecoPC - tonicPC + 12) % 12;
             const entryDestino = map[intervalDestino] || {r:"?"};
@@ -3851,83 +3851,107 @@ const conteoResultado = contarAcordesEnTonalidad(i, targetPC, newMode, results, 
 const numAcordes = conteoResultado.count;
 
         if (numAcordes <= 2) {
-            // Antes de descartar esto sin más como "dominante secundaria sin
-            // importancia", comprobamos un caso más interesante: puede que el
-            // acorde tonicalizado (el destino de esta breve dominante secundaria)
-            // sea, en realidad, un acorde común genuino entre la tonalidad que
-            // veníamos usando (tonActual) y la tonalidad a la que "regresamos"
-            // justo después (conteoResultado.retorno). En ese caso lo correcto
-            // no es ignorar el pasaje, sino reconocerlo como una modulación
-            // diatónica por acorde común — un acorde que ha sido previamente
-            // tonicalizado/resaltado mediante una dominante secundaria.
-            let manejadoComoModulacionDiatonica = false;
-            if (conteoResultado.retorno) {
-                const pivotIdx = i + numAcordes - 1; // último acorde de la tonicización breve
-                const pivotRes = results[pivotIdx];
-                const retornoCasa = conteoResultado.retorno.casa;
-                const tonActualPC = getTonicPC(tonActual.tonic);
-                const esDistinta = !(retornoCasa.pc === tonActualPC && retornoCasa.mode === tonActual.mode);
-                if (esDistinta && pivotRes && !pivotRes.error) {
-                    const pivotChordObj = structuralChords[`chord${pivotIdx + 1}`];
-                    const pivotPCs = _getChordPCs(pivotChordObj);
-                    const oldScaleP = _buildScale(tonActualPC, tonActual.mode);
-                    const newScaleP = _buildScale(retornoCasa.pc, retornoCasa.mode);
-                    const esComun = pivotPCs.length > 0 &&
-                                     pivotPCs.every(pc => oldScaleP.includes(pc)) &&
-                                     pivotPCs.every(pc => newScaleP.includes(pc));
-                    if (esComun) {
-                        const retTonicEngFinal = _pcToEnglishTonic(retornoCasa.pc, retornoCasa.mode);
-                        if (retTonicEngFinal) {
-                            const gradoOrigen  = _gradoSimple(pivotRes.rootPC, pivotRes.tipo, tonActualPC, tonActual.mode);
-                            const gradoDestino = _gradoSimple(pivotRes.rootPC, pivotRes.tipo, retornoCasa.pc, retornoCasa.mode);
-                            const pivotEsp = _PC_NAME_ES[pivotRes.rootPC] || '';
-                            const calidadPivot = (pivotRes.tipo || '').includes('menor') ? 'm' : 'M';
-                            let pivoteDescComun = ` — Acorde ${pivotIdx + 1} (${pivotEsp} ${calidadPivot}) actúa como acorde común: ${gradoOrigen} de ${tonActual.tonic} / ${gradoDestino} de ${retTonicEngFinal}`;
-                            if (pivotIdx > i) {
-                                pivoteDescComun += `, tonicalizado previamente por el acorde ${i + 1} (dominante secundaria)`;
-                            }
-                            modulaciones.push({
-                                acordeD: i + 1,
-                                acordeT: pivotIdx + 1,
-                                acordeCambioVisual: pivotIdx + 1,
-                                tipo: "Diatónica",
-                                desdeTonica: tonActual.tonic,
-                                desdeModo: tonActual.mode,
-                                haciaTonica: retTonicEngFinal,
-                                haciaModo: retornoCasa.mode,
-                                haciaEsp: tonicLabels[retTonicEngFinal] || '',
-                                pivoteDesc: pivoteDescComun
-                            });
-                            for (let j = i; j < results.length; j++) {
-                                tonalidadLocal[j] = { tonic: retTonicEngFinal, mode: retornoCasa.mode };
-                            }
-                            manejadoComoModulacionDiatonica = true;
-                        }
+            const tonActualPC = getTonicPC(tonActual.tonic);
+            const finBreve = i + numAcordes; // primer acorde (0-based) tras la breve tonicización
+
+            // ¿Qué tonalidad queda confirmada por una cadencia reconocible justo
+            // después de esta breve tonicización: la que ya teníamos
+            // (tonActual), o alguna otra (típicamente la tonalidad global de la
+            // pieza)? No basta con mirar coincidencia de escala (nunca
+            // distingue relativas como Do M / La m, y falla si el acorde
+            // siguiente no es literalmente la tónica); por eso reutilizamos el
+            // propio detector de cadencias.
+            const candidatosRetorno = [{ pc: tonActualPC, mode: tonActual.mode, tonic: tonActual.tonic }];
+            const globalTonicPCCalc = getTonicPC(globalTonicEng);
+            if (!(globalTonicPCCalc === tonActualPC && globalMode === tonActual.mode)) {
+                candidatosRetorno.push({ pc: globalTonicPCCalc, mode: globalMode, tonic: globalTonicEng });
+            }
+
+            let retornoConfirmado = null;
+            if (finBreve < results.length) {
+                for (const cand of candidatosRetorno) {
+                    if (cand.pc === targetPC && cand.mode === newMode) continue;
+                    if (hayCadenciaEnTonalidad(finBreve, results.length - 1, cand.pc, cand.mode, phraseCadences, results)) {
+                        retornoConfirmado = cand;
+                        break;
                     }
                 }
             }
 
-            if (!manejadoComoModulacionDiatonica) {
-                // Dominante secundaria / tonicización breve sin acorde común
-                // aprovechable: ignorar (no añadir a modulaciones ni
-                // inflexiones), pero aun así corregimos tonalidadLocal para los
-                // acordes de la propia tonicización breve (para que se analicen
-                // respecto a la tonalidad que realmente están tonicizando, no
-                // la anterior) y, si además hemos detectado que la música
-                // regresa a una tonalidad ya establecida justo después,
-                // propagamos esa tonalidad para el resto de la pieza.
+            let manejadoComoModulacionDiatonica = false;
+            let esRetornoALaMismaTonalidad = false;
+
+            if (retornoConfirmado && retornoConfirmado.pc === tonActualPC && retornoConfirmado.mode === tonActual.mode) {
+                // No ha habido ningún cambio real de tonalidad: es una
+                // dominante secundaria "local" (p.ej. V/III) que toniciza un
+                // grado de la tonalidad en la que ya estábamos. No tocamos
+                // tonalidadLocal para nada de este tramo, de modo que el
+                // propio mecanismo de notación de dominantes secundarias
+                // (V/x) etiquete correctamente tanto el acorde dominante
+                // como su resolución dentro de esa misma tonalidad.
+                esRetornoALaMismaTonalidad = true;
+            } else if (retornoConfirmado) {
+                // La música regresa a una tonalidad DISTINTA de aquella en la
+                // que estábamos. Comprobamos si el acorde tonicizado es,
+                // además, un acorde común genuino entre la tonalidad anterior
+                // y esa nueva tonalidad; si lo es, es una modulación
+                // diatónica real por acorde común.
+                const pivotIdx = i + numAcordes - 1;
+                const pivotRes = results[pivotIdx];
+                if (pivotRes && !pivotRes.error) {
+                    const pivotChordObj = structuralChords[`chord${pivotIdx + 1}`];
+                    const pivotPCs = _getChordPCs(pivotChordObj);
+                    const oldScaleP = _buildScale(tonActualPC, tonActual.mode);
+                    const newScaleP = _buildScale(retornoConfirmado.pc, retornoConfirmado.mode);
+                    const esComun = pivotPCs.length > 0 &&
+                                     pivotPCs.every(pc => oldScaleP.includes(pc)) &&
+                                     pivotPCs.every(pc => newScaleP.includes(pc));
+                    if (esComun) {
+                        const gradoOrigen  = _gradoSimple(pivotRes.rootPC, pivotRes.tipo, tonActualPC, tonActual.mode);
+                        const gradoDestino = _gradoSimple(pivotRes.rootPC, pivotRes.tipo, retornoConfirmado.pc, retornoConfirmado.mode);
+                        const pivotEsp = _PC_NAME_ES[pivotRes.rootPC] || '';
+                        const calidadPivot = (pivotRes.tipo || '').includes('menor') ? 'm' : 'M';
+                        let pivoteDescComun = ` — Acorde ${pivotIdx + 1} (${pivotEsp} ${calidadPivot}) actúa como acorde común: ${gradoOrigen} de ${tonActual.tonic} / ${gradoDestino} de ${retornoConfirmado.tonic}`;
+                        if (pivotIdx > i) {
+                            pivoteDescComun += `, tonicizado previamente por el acorde ${i + 1} (dominante secundaria)`;
+                        }
+                        modulaciones.push({
+                            acordeD: i + 1,
+                            acordeT: pivotIdx + 1,
+                            acordeCambioVisual: pivotIdx + 1,
+                            tipo: "Diatónica",
+                            desdeTonica: tonActual.tonic,
+                            desdeModo: tonActual.mode,
+                            haciaTonica: retornoConfirmado.tonic,
+                            haciaModo: retornoConfirmado.mode,
+                            haciaEsp: tonicLabels[retornoConfirmado.tonic] || '',
+                            pivoteDesc: pivoteDescComun
+                        });
+                        for (let j = i; j < results.length; j++) {
+                            tonalidadLocal[j] = { tonic: retornoConfirmado.tonic, mode: retornoConfirmado.mode };
+                        }
+                        manejadoComoModulacionDiatonica = true;
+                    } else {
+                        // Regresa a otra tonalidad pero no vía un acorde común
+                        // limpio: propagamos igualmente esa tonalidad confirmada
+                        // desde el pivote en adelante.
+                        for (let j = pivotIdx; j < results.length; j++) {
+                            tonalidadLocal[j] = { tonic: retornoConfirmado.tonic, mode: retornoConfirmado.mode };
+                        }
+                        manejadoComoModulacionDiatonica = true; // ya gestionado, no aplicar el fallback genérico
+                    }
+                }
+            }
+
+            if (!manejadoComoModulacionDiatonica && !esRetornoALaMismaTonalidad) {
+                // No se ha podido confirmar ninguna tonalidad conocida justo
+                // después (caso poco habitual): recurrimos al comportamiento
+                // por defecto, tratando el pasaje como una breve tonicización
+                // de targetPC/newMode.
                 const tonicBreveEng = _pcToEnglishTonic(targetPC, newMode);
                 if (tonicBreveEng) {
                     for (let j = i; j < i + numAcordes; j++) {
                         tonalidadLocal[j] = { tonic: tonicBreveEng, mode: newMode };
-                    }
-                }
-                if (conteoResultado.retorno) {
-                    const retTonicEng = _pcToEnglishTonic(conteoResultado.retorno.casa.pc, conteoResultado.retorno.casa.mode);
-                    if (retTonicEng) {
-                        for (let j = conteoResultado.retorno.idx; j < results.length; j++) {
-                            tonalidadLocal[j] = { tonic: retTonicEng, mode: conteoResultado.retorno.casa.mode };
-                        }
                     }
                 }
             }
@@ -4741,7 +4765,18 @@ function evaluarReglasArmonicas(results, adaptations, structuralChords, parsed, 
         const tonActual       = tonalidadLocal[i];
         const localTonic      = tonActual.tonic;
         const localMode       = tonActual.mode;
-        const localSensiblePC = getLeadingTonePC(localTonic, localMode);
+        let localSensiblePC   = getLeadingTonePC(localTonic, localMode);
+        // Si este acorde en concreto funciona como una dominante secundaria o
+        // aplicada (notación "V/x" o "vii°/x"), la sensible que de verdad
+        // importa para sus propias reglas de doblado es la suya propia,
+        // relativa al grado que está tonicizando — no la sensible fija de la
+        // tonalidad general. Un V7/iii (p.ej. Si7 en Do M) tiene como
+        // sensible su propia 3ª (Re#, sensible de Mi); el Si de la fundamental
+        // no es "la sensible" en este acorde, es solo su fundamental.
+        if (currentAdapt && currentAdapt.degree && currentAdapt.degree.includes('/') && !currentRes.error) {
+            const esViiAplicada = currentAdapt.degree.trim().toLowerCase().startsWith('vii');
+            localSensiblePC = esViiAplicada ? currentRes.rootPC : (currentRes.rootPC + 4) % 12;
+        }
         const ind = _evaluarAcordeIndividual(
             chordNum, currentStructural, currentRaw, currentRes,
             localSensiblePC, localTonic, localMode
