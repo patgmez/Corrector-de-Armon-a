@@ -2840,6 +2840,21 @@ function esDominanteFuncional(acordeActual, resActual, chordIdx, results, struct
     if (!nextChord || !nextRes) {
         return false;
     }
+    // La tónica de la tonalidad local, EN SU FORMA DE TRÍADA SIMPLE (sin
+    // alterar), nunca debe tratarse como una dominante aplicada de otro grado
+    // (p. ej. "V/IV"), por mucho que resuelva por 5ª descendente al IV grado
+    // — eso es sencillamente I-IV, no una tonicización real: la tónica y la
+    // dominante de la subdominante son, sin más, el mismo acorde. Pero si esa
+    // tónica se convierte en 7ª de dominante (con la 7ª cromática, ajena a la
+    // escala), eso sí es una señal real de tonicización y debe evaluarse con
+    // normalidad.
+    if (localTonic !== null && localTonic !== undefined && resActual.rootPC === localTonic) {
+        const tipoTonica = resActual.tipo || "";
+        const esSeptimaDeDominante = tipoTonica.includes("M7m") || tipoTonica.includes("dominante");
+        if (!esSeptimaDeDominante) {
+            return false;
+        }
+    }
     const tipoActual = resActual.tipo || "";
     const tipoSiguiente = nextRes.tipo || "";
 
