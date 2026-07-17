@@ -1996,7 +1996,7 @@ function checkIncompleteChordDoubling(chord, res, num, localSensiblePC) {
     return warnings;
 }
 
-function checkMelodicMinorSteps(c1, c2, chordNum, localTonic, localMode) {
+function checkMelodicMinorSteps(c1, c2, chordNum, localTonic, localMode, currentRes, currentAdapt) {
     if (localMode !== 'minor' || !localTonic) return [];
     const warnings = [];
     const tonicPC = getTonicPC(localTonic);
@@ -2004,6 +2004,14 @@ function checkMelodicMinorSteps(c1, c2, chordNum, localTonic, localMode) {
     const raisedVI  = (tonicPC + 9) % 12; 
     const naturalVII= (tonicPC + 10) % 12;
     const raisedVII = (tonicPC + 11) % 12;
+    // Si el acorde actual es, él mismo, una dominante secundaria/aplicada en
+    // funcionamiento (p.ej. un V7/III), su fundamental no se comporta como
+    // el VII grado natural (subtónica) de la escala menor local que necesita
+    // alterarse para poder ascender: es la fundamental de un acorde
+    // independiente que resuelve según su propio movimiento de fundamental
+    // (normalmente 5ª descendente), no según las reglas de conducción de la
+    // escala menor.
+    const esDominanteAplicada = !!(currentRes && !currentRes.error && currentAdapt && currentAdapt.esDominanteFuncional);
     ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
         const n1 = c1[v];
         const n2 = c2[v];
@@ -2011,7 +2019,8 @@ function checkMelodicMinorSteps(c1, c2, chordNum, localTonic, localMode) {
         const pc1 = n1.pitchClass;
         const pc2 = n2.pitchClass;
         const isAscending = n2.midi > n1.midi;
-        if (pc1 === naturalVII && pc2 === tonicPC && isAscending) {
+        const esEstaVozLaFundamentalAplicada = esDominanteAplicada && currentRes.rootPC === pc1;
+        if (pc1 === naturalVII && pc2 === tonicPC && isAscending && !esEstaVozLaFundamentalAplicada) {
             warnings.push(`Escala Menor (${vNames[v]}): El VII grado natural (Subtónica) no debe resolver a la Tónica. Debes alterar el VII (Sensible).`);
         }
         if (pc1 === naturalVI && pc2 === raisedVII && isAscending) {
@@ -2397,14 +2406,6 @@ function checkLeadingTone(c1, c2, leadingTonePC, analysis1, analysis2, chordNum1
 
     // Si ambos son dominantes, la sensible puede prolongarse
     if (esDom1 && esDom2) {
-        ['soprano', 'alto', 'tenor', 'bass'].forEach(v => {
-            if (!c1[v] || !c2[v]) return;
-            if (c1[v].pitchClass === leadingTonePC) {
-                if (c1[v].pitchClass === c2[v].pitchClass) {
-                    successes.push(`Sensible en ${vNames[v]} prolongada (función dominante mantenida).`);
-                }
-            }
-        });
         return { successes, warnings };
     }
 
@@ -2426,9 +2427,10 @@ function checkLeadingTone(c1, c2, leadingTonePC, analysis1, analysis2, chordNum1
         if (n1.pitchClass === leadingTonePC) {
             const diff = n2.midi - n1.midi;
             if (diff === 1 || diff === 2 || diff === -11) {
-                successes.push(`Sensible en ${vNames[v]} resuelve correctamente a tónica.`);
+                // Resolución correcta y directa: no se señala (solo interesa
+                // cuando es incorrecta o cuando es indirecta en otra voz).
             } else if (targetMinor7thPC !== -1 && n2.pitchClass === targetMinor7thPC && diff < 0) {
-                successes.push(`Enlace correcto en cadena: La sensible en ${vNames[v]} desciende para convertirse en la 7ª del siguiente acorde.`);
+                // Enlace correcto en cadena (7ª del siguiente acorde): tampoco se señala.
             } else if (!nextChordTieneTonica) {
                 // El acorde siguiente carece de tónica: sin obligación de resolver (§97,b).
                 return;
@@ -2890,6 +2892,20 @@ function esDominanteFuncional(acordeActual, resActual, chordIdx, results, struct
         let fundamentalResuelve = false;
         if (esTipoV && !esTipoVII) {
             fundamentalResuelve = (nextRes.rootPC === targetPC);
+            // Resolución sustitutiva ("rota"): la dominante aplicada puede
+            // resolver al VI grado (relativo menor) de la tonalidad que
+            // toniciza, en vez de al I, ya que el VI suele sustituir a la
+            // tónica (p.ej. V7/III resolviendo a vi de esa tonalidad —el
+            // acorde de la propia tonalidad local— en vez de a la III
+            // propiamente dicha).
+            if (!fundamentalResuelve) {
+                const targetRelativeMinorPC = (targetPC + 9) % 12;
+                const tipoSig = nextRes.tipo || "";
+                if (nextRes.rootPC === targetRelativeMinorPC &&
+                    tipoSig.includes("menor") && !tipoSig.includes("disminu")) {
+                    fundamentalResuelve = true;
+                }
+            }
         } else {
             for (let v of ['soprano','alto','tenor','bass']) {
                 const nAct = acordeActual[v];
@@ -3255,7 +3271,7 @@ function _evaluarEnlacePorTiempo(
     chordNum, currentStructural, nextStructural,
     currentRes, nextRes, prevRes, prevBeat,
     localTonic, localMode,
-    chordStartBeats
+    chordStartBeats, currentAdapt
 ) {
     const warnings = [];
     const b1 = chordStartBeats[chordNum];
@@ -3268,7 +3284,7 @@ function _evaluarEnlacePorTiempo(
     ));
 
     warnings.push(...checkMelodicMinorSteps(
-        currentStructural, nextStructural, chordNum, localTonic, localMode
+        currentStructural, nextStructural, chordNum, localTonic, localMode, currentRes, currentAdapt
     ));
     return { warnings };
 }
@@ -3792,12 +3808,95 @@ function hayCadenciaEnTonalidad(desdeIdx, hastaIdx, targetPC, targetMode, phrase
 }
 
 // =============================================================================
+// CAMBIO DE MODO SOSTENIDO (mayor <-> menor, misma tónica)
+// =============================================================================
+// A diferencia de una modulación a otra tonalidad, aquí no cambia la
+// fundamental, así que no hay ningún acorde con "tirón" hacia una tónica
+// distinta que sirva de disparador (el mecanismo de detectarModulaciones,
+// basado en esDomPotencial, no sirve aquí). En su lugar se detecta por
+// continuidad: el tramo empieza en el primer acorde con una nota exclusiva
+// del modo nuevo, continúa mientras no aparezca una nota exclusiva del modo
+// VIEJO (los acordes ambiguos —como un IV mayor en menor para evitar la 2ª
+// aumentada— no lo cortan, porque esas notas también existen en el modo
+// viejo), y se confirma exigiendo una cadencia (auténtica o plagal) en el
+// modo nuevo dentro del propio tramo.
+function _exclusivoDeModo(chordNotesPCs, tonicPC, modo) {
+    if (modo === 'minor') {
+        const soloDeMenor = [3, 8, 10].map(iv => (tonicPC + iv) % 12);
+        return chordNotesPCs.some(pc => soloDeMenor.includes(pc));
+    } else {
+        const soloDeMayor = (tonicPC + 4) % 12;
+        return chordNotesPCs.includes(soloDeMayor);
+    }
+}
+
+function _hayCadenciaEnModo(results, desdeIdx, hastaIdx, tonicPC, modo) {
+    const dominantPC = (tonicPC + 7) % 12;
+    const subdominantPC = (tonicPC + 5) % 12;
+    for (let k = desdeIdx; k < hastaIdx; k++) {
+        const r1 = results[k], r2 = results[k + 1];
+        if (!r1 || !r2 || r1.error || r2.error) continue;
+        const t2 = r2.tipo || '';
+        const tipo2EsTonica = (modo === 'minor') ? t2.includes('menor') : (t2.includes('mayor') && !t2.includes('menor'));
+        if (r2.rootPC !== tonicPC || !tipo2EsTonica) continue;
+        const t1 = r1.tipo || '';
+        const esDominanteDeAqui = (r1.rootPC === dominantPC) &&
+            (t1.includes('mayor') || t1.includes('M7m') || t1 === 'M7m (sin 5ª)');
+        const esSubdominanteDeAqui = (r1.rootPC === subdominantPC);
+        if (esDominanteDeAqui || esSubdominanteDeAqui) return true;
+    }
+    return false;
+}
+
+function detectarCambiosDeModo(results, structuralChords, tonalidadLocal) {
+    const modulacionesEncontradas = [];
+    let i = 0;
+    while (i < results.length) {
+        const res = results[i];
+        const tonActual = tonalidadLocal[i];
+        if (!res || res.error || !tonActual) { i++; continue; }
+        const tonicPC = getTonicPC(tonActual.tonic);
+        const notasChord = _getChordPCs(structuralChords[`chord${i + 1}`]);
+        const modoNuevo = (tonActual.mode === 'major') ? 'minor' : 'major';
+        if (_exclusivoDeModo(notasChord, tonicPC, modoNuevo)) {
+            let fin = i;
+            for (let j = i + 1; j < results.length; j++) {
+                const rj = results[j];
+                if (!rj || rj.error) break;
+                const notasJ = _getChordPCs(structuralChords[`chord${j + 1}`]);
+                if (_exclusivoDeModo(notasJ, tonicPC, tonActual.mode)) break;
+                fin = j;
+            }
+            if (_hayCadenciaEnModo(results, i, fin, tonicPC, modoNuevo)) {
+                for (let k = i; k <= fin; k++) {
+                    tonalidadLocal[k] = { tonic: tonActual.tonic, mode: modoNuevo };
+                }
+                modulacionesEncontradas.push({
+                    acordeD: i + 1, acordeT: fin + 1,
+                    acordeCambioVisual: i + 1,
+                    tipo: 'Cambio de Modo',
+                    desdeTonica: tonActual.tonic, desdeModo: tonActual.mode,
+                    haciaTonica: tonActual.tonic, haciaModo: modoNuevo,
+                    pivoteDesc: ` — Cambio de modo sostenido a ${tonActual.tonic} ${modoNuevo === 'minor' ? 'menor' : 'mayor'}, confirmado por cadencia interna`
+                });
+                i = fin + 1;
+                continue;
+            }
+        }
+        i++;
+    }
+    return modulacionesEncontradas;
+}
+
+// =============================================================================
 // FUNCIÓN COORDINADORA — detectarModulaciones (MODIFICADA)
 // =============================================================================
 function detectarModulaciones(results, adaptations, structuralChords, chordStartBeats, globalTonicEng, globalMode, tonalidadBase, phraseCadences) {
     const tonalidadLocal = tonalidadBase ? [...tonalidadBase] : results.map(() => ({ tonic: globalTonicEng, mode: globalMode }));
     const modulaciones = [];
     const inflexiones = [];
+
+    modulaciones.push(...detectarCambiosDeModo(results, structuralChords, tonalidadLocal));
 
     for (let i = 0; i < results.length - 1; i++) {
         const res = results[i];
@@ -3828,10 +3927,24 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         const notasAcorde = _getChordPCs(structuralChords[`chord${i + 1}`]);
         const esDiatonico = notasAcorde.every(pc => escalaActual.includes(pc));
 
+        // 1b. Las tres formas del modo menor (natural/armónica/melódica) se
+        // unen en una sola escala permisiva de 9 notas (_INTERVALS_MINOR), así
+        // que comparten demasiadas notas con el mayor relativo u homónimo
+        // para que "esDiatonico" descarte con seguridad una cadencia real de
+        // regreso a la tonalidad ORIGINAL de la pieza (p.ej. un IV mayor con
+        // 6º grado elevado en menor es, nota por nota, indistinguible de un
+        // IV normal en la tonalidad original). Antes de descartar el acorde,
+        // comprobamos si de todos modos hay una cadencia genuina confirmando
+        // ese regreso justo aquí.
+        const globalTonicPCparaRegreso = getTonicPC(globalTonicEng);
+        const esRegresoAlHogar = (targetPC === globalTonicPCparaRegreso) &&
+            !(tonActual.tonic === globalTonicEng && tonActual.mode === globalMode) &&
+            hayCadenciaEnTonalidad(i, results.length - 1, globalTonicPCparaRegreso, globalMode, phraseCadences, results);
+
         // 2. Corregir el falso positivo del IV grado: 
         // Si es una tríada mayor puramente diatónica (sin 7ª ni alteraciones), es simplemente I, IV o V.
         // No tiene fuerza cromática para ser la dominante de una nueva tonalidad.
-        if (tipo === "mayor" && esDiatonico) {
+        if (tipo === "mayor" && esDiatonico && !esRegresoAlHogar) {
             continue; 
         }
 
@@ -3840,7 +3953,8 @@ function detectarModulaciones(results, adaptations, structuralChords, chordStart
         if (escalaActual.includes(targetPC) &&
             esDiatonico &&
             !tipo.includes("5dism7dism") &&
-            !tipo.includes("sexta aumentada")) {
+            !tipo.includes("sexta aumentada") &&
+            !esRegresoAlHogar) {
             continue;
         }
         // --- FIN CÓDIGO DE SUSTITUCIÓN ---
@@ -3943,6 +4057,34 @@ const numAcordes = conteoResultado.count;
                 // y esa nueva tonalidad; si lo es, es una modulación
                 // diatónica real por acorde común.
                 const pivotIdx = i + numAcordes - 1;
+                // Antes de fijar el cambio de tonalidad en este último acorde
+                // de la breve tonicización, buscamos hacia atrás (igual que
+                // _detectarTipoModulacion en las modulaciones plenas) si ya
+                // había una región más amplia de acordes comunes a ambas
+                // tonalidades — p.ej. un ii que ya es diatónico a la
+                // tonalidad de regreso — que también debería marcar ya el
+                // cambio, en vez de esperar al acorde que confirma la cadencia.
+                const oldScaleParaRetorno = _buildScale(tonActualPC, tonActual.mode);
+                const newScaleParaRetorno = _buildScale(retornoConfirmado.pc, retornoConfirmado.mode);
+                let idxBusquedaRetorno = i - 1;
+                const limiteBusquedaRetorno = Math.max(0, i - 6);
+                let pivoteMasTemprano = -1;
+                while (idxBusquedaRetorno >= limiteBusquedaRetorno) {
+                    const tempR = results[idxBusquedaRetorno];
+                    const tempChordR = structuralChords[`chord${idxBusquedaRetorno + 1}`];
+                    if (!tempR || tempR.error || !tempChordR) break;
+                    const notasR = _getChordPCs(tempChordR);
+                    if (notasR.length === 0) break;
+                    const enViejaR = notasR.every(pc => oldScaleParaRetorno.includes(pc));
+                    const enNuevaR = notasR.every(pc => newScaleParaRetorno.includes(pc));
+                    if (enViejaR && enNuevaR) {
+                        pivoteMasTemprano = idxBusquedaRetorno;
+                    } else {
+                        break;
+                    }
+                    idxBusquedaRetorno--;
+                }
+                const inicioPivote = (pivoteMasTemprano >= 0) ? pivoteMasTemprano : pivotIdx;
                 const pivotRes = results[pivotIdx];
                 if (pivotRes && !pivotRes.error) {
                     const pivotChordObj = structuralChords[`chord${pivotIdx + 1}`];
@@ -3958,13 +4100,16 @@ const numAcordes = conteoResultado.count;
                         const pivotEsp = _PC_NAME_ES[pivotRes.rootPC] || '';
                         const calidadPivot = (pivotRes.tipo || '').includes('menor') ? 'm' : 'M';
                         let pivoteDescComun = ` — Acorde ${pivotIdx + 1} (${pivotEsp} ${calidadPivot}) actúa como acorde común: ${gradoOrigen} de ${tonActual.tonic} / ${gradoDestino} de ${retornoConfirmado.tonic}`;
+                        if (inicioPivote < pivotIdx) {
+                            pivoteDescComun += `. Ya desde el acorde ${inicioPivote + 1} los acordes son comunes a ambas tonalidades`;
+                        }
                         if (pivotIdx > i) {
                             pivoteDescComun += `, tonicizado previamente por el acorde ${i + 1} (dominante secundaria)`;
                         }
                         modulaciones.push({
                             acordeD: i + 1,
                             acordeT: pivotIdx + 1,
-                            acordeCambioVisual: pivotIdx + 1,
+                            acordeCambioVisual: inicioPivote + 1,
                             tipo: "Diatónica",
                             desdeTonica: tonActual.tonic,
                             desdeModo: tonActual.mode,
@@ -3973,7 +4118,7 @@ const numAcordes = conteoResultado.count;
                             haciaEsp: tonicLabels[retornoConfirmado.tonic] || '',
                             pivoteDesc: pivoteDescComun
                         });
-                        for (let j = i; j < results.length; j++) {
+                        for (let j = inicioPivote; j < results.length; j++) {
                             tonalidadLocal[j] = { tonic: retornoConfirmado.tonic, mode: retornoConfirmado.mode };
                         }
                         manejadoComoModulacionDiatonica = true;
@@ -4834,7 +4979,14 @@ function _cadenciaEnRango(lastIdx, results, adaptations, structuralChords, tonal
         p1 = structuralChords[`chord${lastIdx - 1}`];
     }
     let tonFinal;
-    if (tonalidadLocal && tonalidadLocal[lastIdx]) {
+    // Usamos la tonalidad del acorde ANTERIOR al final para decidir el modo
+    // de la cadencia (dominante/predominante que realmente la establece),
+    // no la del propio acorde final: si éste es una tercera de picardía, ya
+    // ha quedado marcado como mayor, y usar su propio modo enmascararía que
+    // la cadencia era, en realidad, en modo menor.
+    if (tonalidadLocal && tonalidadLocal[lastIdx - 1]) {
+        tonFinal = tonalidadLocal[lastIdx - 1];
+    } else if (tonalidadLocal && tonalidadLocal[lastIdx]) {
         tonFinal = tonalidadLocal[lastIdx];
     } else {
         tonFinal = {
@@ -4951,7 +5103,7 @@ function evaluarReglasArmonicas(results, adaptations, structuralChords, parsed, 
             const tiempo = _evaluarEnlacePorTiempo(
     chordNum, currentStructural, nextStructural,
     currentRes, nextRes, prevRes, prevBeat,
-    localTonic, localMode, chordStartBeats
+    localTonic, localMode, chordStartBeats, currentAdapt
 );
             warnings.push(...tiempo.warnings.map(x => `${label}: ${x}`));
             const esPedal1 = currentRes.tipo === "Dominante sobre tónica";
@@ -5239,7 +5391,7 @@ function detectarSeriesSextasLogica(results, structuralChords, chordStartBeats, 
 
     for (let i = 0; i < totalChords; i++) {
         if (!esPrimeraInversionTriada(results[i])) {
-            if (runLen >= 3) marcarSerie(runStart, runStart + runLen - 1);
+            if (runLen >= 4) marcarSerie(runStart, runStart + runLen - 1);
             runStart = -1; runLen = 0;
             continue;
         }
@@ -5251,12 +5403,12 @@ function detectarSeriesSextasLogica(results, structuralChords, chordStartBeats, 
             if (tresVocesParalelas(chPrev, chCurr)) {
                 runLen++;
             } else {
-                if (runLen >= 3) marcarSerie(runStart, runStart + runLen - 1);
+                if (runLen >= 4) marcarSerie(runStart, runStart + runLen - 1);
                 runStart = i; runLen = 1;
             }
         }
     }
-    if (runLen >= 3) marcarSerie(runStart, runStart + runLen - 1);
+    if (runLen >= 4) marcarSerie(runStart, runStart + runLen - 1);
 }
 
 function detectarSecuenciasLogica(results, structuralChords, infos) {
@@ -6856,12 +7008,12 @@ tipo.includes("novena de dominante") || tipo.includes("M7m");
         if (i.num === 3 && res.tipo && res.tipo.includes("dominante")) {
             show = true;}
         if (i.isSensible && isDominantFunction) show = true;
-    
+    }
     else if (inv === 1) { if (i.num === 6 || i.num === 5 || i.num === 7) show = true; }
     else if (inv === 2) { if (i.num === 6 || i.num === 5 || i.num === 4 || i.num === 3) show = true; }
     else if (inv === 3) { if (i.num === 4 || i.num === 3 || i.num === 2) show = true; }
     if (res.esNovenaSinTercera) show = true;
-}}
+}
             else if (esSensibleTriada) {
                  if (inv === 0) { if (i.num === 5) show = true; }
                  else if (inv === 1) { if (i.num === 6 || i.num === 3) show = true; }
