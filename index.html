@@ -3126,7 +3126,14 @@ function detectCadenceSequence(a1, a2, a3, r1, r2, r3, p1, p2, p3, mode, tonicPC
         return finalMsg;
     };
     if (esCadenciaSecundaria) {
-        const r2Fund = r2.estadoTexto.includes("Fundamental") || r2.tipo === "Dominante sobre tónica";
+        // El "acorde de dominante sobre tónica" es una apoyatura que decora
+        // la llegada a la tónica: para juzgar si la cadencia es "perfecta"
+        // (dominante en estado fundamental), heredamos el estado del acorde
+        // ANTERIOR a él, que es la dominante real — no el de la propia
+        // apoyatura, cuyo bajo sigue siendo la tónica sostenida.
+        const r2Fund = (r2.tipo === "Dominante sobre tónica")
+            ? !!(r1 && r1.rootPC === r2.rootPC && d1 === "V" && r1.estadoTexto && r1.estadoTexto.includes("Fundamental"))
+            : r2.estadoTexto.includes("Fundamental");
         const r3Fund = r3.estadoTexto.includes("Fundamental");
         if (r2Fund && r3Fund && d2.startsWith("V")) {
             return finalize(`Cadencia Auténtica (sobre el grado ${d3})`);
@@ -3153,7 +3160,12 @@ function detectCadenceSequence(a1, a2, a3, r1, r2, r3, p1, p2, p3, mode, tonicPC
         }
     }
     if (d3 === "I") {
-        const r2Fund = r2.estadoTexto.includes("Fundamental") || r2.tipo === "Dominante sobre tónica";
+        // Mismo criterio que arriba: la apoyatura de dominante sobre tónica
+        // hereda el estado fundamental del acorde anterior (la dominante
+        // real), no el suyo propio.
+        const r2Fund = (r2.tipo === "Dominante sobre tónica")
+            ? !!(r1 && r1.rootPC === r2.rootPC && d1 === "V" && r1.estadoTexto && r1.estadoTexto.includes("Fundamental"))
+            : r2.estadoTexto.includes("Fundamental");
         const r3Fund = r3.estadoTexto.includes("Fundamental");
         if (r1 && d1 === "I" && r1.estadoTexto.includes("2ª Inversión") && d2 === "V" && r2Fund && r3Fund) {
             return finalize("Cadencia Aut. Perfecta Ampliada (por 6/4)");
@@ -3381,6 +3393,21 @@ function _calcularTargetPC(res, tipo, structuralChords, chordIdx1based, tonActua
     }
     
     if (tipo.includes("5dism7dism") || tipo.includes("disminuido") || tipo.includes("disminuida")) {
+        // Para una tríada disminuida simple (no una 7ª disminuida, que sí es
+        // simétrica y admite varias lecturas enarmónicas), la única nota con
+        // tendencia resolutiva real es la propia fundamental, que sube un
+        // semitono. Si ese destino natural es la propia tonalidad actual, no
+        // hay ninguna tonicización que señalar: es, sencillamente, el VII
+        // grado diatónico resolviendo con normalidad. No tiene sentido
+        // barajar los candidatos "+1" de la 3ª y la 5ª (pensados para la
+        // ambigüedad enarmónica real de la 7ª disminuida simétrica), ya que
+        // en una tríada no simétrica no tienen ese significado funcional.
+        if (tipo === "disminuido" || tipo === "disminuida") {
+            const targetPCTriada = (res.rootPC + 1) % 12;
+            if (targetPCTriada === currentTonicPC) return null;
+            const targetEspTriada = _PC_NAME_ES[targetPCTriada];
+            return { targetPC: targetPCTriada, targetEsp: targetEspTriada || "" };
+        }
         const notasAcorde = _getChordPCs(structuralChords[`chord${chordIdx1based}`]);
         const candidatos = [...new Set(notasAcorde.map(pc => (pc + 1) % 12))]
                             .filter(c => c !== currentTonicPC);
