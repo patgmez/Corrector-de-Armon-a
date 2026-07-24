@@ -2049,7 +2049,7 @@ function checkParallelsStrict(c1, c2, res1, res2, chordIndex, localTonic, localM
     const infos = []; 
     const badPairs = [];
     if(!c1 || !c2 || !res1 || res1.error || !res1.tipo) return { errors, infos, badPairs }; 
-    const isGerman6 = res1.tipo.includes("Alemana");
+    const isGerman6 = res1.tipo.toLowerCase().includes("alemana");
     let esExcepcionDesiguales = false;
     if (res2 && !res2.error && localTonic && localMode) {
         const tonicPC = getTonicPC(localTonic);
@@ -2759,6 +2759,17 @@ function _fuerzaCadenciaLocal(hastaIdx, targetPC, targetMode, results, refPC, re
         // referencia (Do Mayor) explicara exactamente lo mismo con una
         // semicadencia corriente.
         if (intervalo === 5 && _esCalidadSubdominante(tipo2, targetMode)) return 1; // IV-I: tentativo
+        // Aunque la aproximación no sea ninguna de las anteriores (p.ej. un
+        // ii-I, sin dominante ni subdominante reconocibles), llegar a la
+        // PROPIA tónica de la referencia en fundamental es, por sí solo,
+        // una prueba mínima de que seguimos en casa — y merece, como
+        // mínimo, el mismo crédito que una semicadencia. Sin esto, "seguir
+        // en la misma tonalidad de siempre" competía en desventaja: la
+        // referencia se quedaba en 0 mientras que una vecina cuya propia
+        // dominante coincidiera con este acorde por pura casualidad (p.ej.
+        // Do Mayor terminando en I tras un ii, coincidiendo con la
+        // dominante de Fa Mayor) ganaba por descarte con una semicadencia.
+        if (esLaPropiaReferencia) return 1;
     }
     const domPC = (targetPC + 7) % 12;
     if (r3Fund && r3.rootPC === domPC) {
@@ -5883,7 +5894,8 @@ function evaluarReglasArmonicas(results, adaptations, structuralChords, parsed, 
     const { tonalidadLocal, chordStartBeats } = contextoTonal;
     _detectarFigurasEspeciales(results, adaptations, successes);
     detectarSeriesSextasLogica(results, structuralChords, chordStartBeats, infos, warnings);
-    detectarSecuenciasLogica(results, structuralChords, infos);
+    const rangosSerieDeSeptimas = detectarSerieDeSeptimas(results, structuralChords, infos);
+    detectarSecuenciasLogica(results, structuralChords, infos, rangosSerieDeSeptimas);
 
     for (let i = 0; i < totalChords; i++) {
         const chordNum         = i + 1;
@@ -5956,7 +5968,19 @@ function evaluarReglasArmonicas(results, adaptations, structuralChords, parsed, 
  
                 errors.push(...enlace.errors.map(x => `${label}: ${x}`));
                 warnings.push(...enlace.warnings.map(x => `${label}: ${x}`));
-                infos.push(...enlace.infos.map(x => `${label}: ${x}`));
+                // "Disonancias seguidas por movimiento directo" describe
+                // justo la conducción de voces esperada dentro de una serie
+                // de séptimas (la 7ª de un acorde resolviendo a la 3ª del
+                // siguiente, con una nueva 7ª apareciendo a la vez) — no una
+                // falta real. Se omite cuando el enlace queda ENTERAMENTE
+                // dentro de un tramo ya reconocido como serie de séptimas.
+                const enlaceDentroDeSerie = rangosSerieDeSeptimas.some(r =>
+                    chordNum >= r.start && (chordNum + 1) <= r.end
+                );
+                const infosFiltrados = enlaceDentroDeSerie
+                    ? enlace.infos.filter(x => !x.includes('Disonancias seguidas'))
+                    : enlace.infos;
+                infos.push(...infosFiltrados.map(x => `${label}: ${x}`));
                 successes.push(...enlace.successes.map(x => `${label}: ${x}`));
             } else {
                 warnings.push(...checkSecondInversionRules(
@@ -6236,11 +6260,70 @@ function detectarSeriesSextasLogica(results, structuralChords, chordStartBeats, 
     if (runLen >= 4) marcarSerie(runStart, runStart + runLen - 1);
 }
 
-function detectarSecuenciasLogica(results, structuralChords, infos) {
+// Serie de séptimas: concepto distinto de la secuencia armónica. La
+// secuencia armónica exige un MODELO de al menos dos acordes que se repite
+// transportado. La serie de séptimas no exige ningún modelo que se repita:
+// se produce siempre que las fundamentales, sea cual sea la inversión de
+// cada acorde, estén a distancia de 5ª (justa o no —tolera también la 5ª
+// disminuida, habitual al recorrer la serie dentro de una sola tonalidad)
+// unas de otras, con una 7ª presente en cada acorde de la cadena (sean
+// dominantes o no). Esa relación de 5as con 7ª es justamente lo que hace
+// que la 7ª de cada acorde enlace con la 3ª (o sensible) del siguiente, y
+// la 3ª con la 7ª — la firma de conducción de voces de este recurso.
+function detectarSerieDeSeptimas(results, structuralChords, infos) {
+    const rangos = [];
+    if (totalChords < 3) return rangos;
+
+    const tieneSeptima = (r) => r && !r.error && r.rootPC !== -1 &&
+        ((r.tipo || '').includes('7') || r.esSeptimaSinQuinta || (r.tipo || '').includes('novena'));
+    // "5ª, justa o no": el movimiento de fundamental de un acorde al
+    // siguiente equivale a una 5ª descendente (o 4ª ascendente, la misma
+    // relación de clase de altura) —7 semitonos en su versión justa, 6 en
+    // la disminuida— o, en dirección contraria, una 5ª ascendente —7
+    // semitonos justa, 6 disminuida también, ya que el tritono hace de
+    // frontera común entre ambas direcciones.
+    const esQuintaEnDireccion = (diff, direccion) =>
+        direccion === 'descendente' ? (diff === 5 || diff === 6) : (diff === 7 || diff === 6);
+
+    let i = 0;
+    while (i < totalChords - 2) {
+        if (!tieneSeptima(results[i])) { i++; continue; }
+
+        let mejorFin = i, mejorDireccion = null;
+        for (const direccion of ['descendente', 'ascendente']) {
+            let j = i;
+            while (j + 1 < totalChords && tieneSeptima(results[j + 1])) {
+                const diff = (results[j + 1].rootPC - results[j].rootPC + 12) % 12;
+                if (!esQuintaEnDireccion(diff, direccion)) break;
+                j++;
+            }
+            if (j > mejorFin) { mejorFin = j; mejorDireccion = direccion; }
+        }
+
+        if (mejorFin > i + 1) { // al menos 2 enlaces válidos (3 acordes) para llamarla "serie"
+            infos.push(`🎼 <strong>Serie de séptimas</strong> (Acordes ${i + 1}–${mejorFin + 1}): fundamentales en 5as ${mejorDireccion}.`);
+            rangos.push({ start: i + 1, end: mejorFin + 1 });
+            i = mejorFin + 1;
+        } else {
+            i++;
+        }
+    }
+    return rangos;
+}
+
+function detectarSecuenciasLogica(results, structuralChords, infos, rangosSerieDeSeptimas = []) {
     if (totalChords < 4) return;
     const getBaseType = (t) => t ? t.split('(')[0].trim().replace(" (dominante)", "") : "";
     const approxEq = (a, b) => { let d = Math.abs(a - b) % 12; if (d > 6) d = 12 - d; return d <= 1; };
     const approxInterval = (a, b) => Math.abs(a - b) <= 1;
+    // Si un tramo ya se ha reconocido como serie de séptimas (un concepto
+    // distinto, sin modelo que se repita), no lo volvemos a etiquetar aquí
+    // como "Secuencia" solo porque, de paso, sus acordes también formen un
+    // patrón de modelo+repetición transportado -eso confundiría los dos
+    // conceptos, que es justo lo que hay que evitar.
+    const solapaConSerieDeSeptimas = (ini, fin) => rangosSerieDeSeptimas.some(r =>
+        Math.max(ini, r.start) <= Math.min(fin, r.end)
+    );
     let i = 0;
 
     while (i < totalChords - 3) {
@@ -6272,7 +6355,16 @@ function detectarSecuenciasLogica(results, structuralChords, infos) {
                         for (const voz of ['soprano', 'alto', 'tenor', 'bass']) {
                             if (cMod1[voz] && cMod2[voz] && cRep1[voz] && cRep2[voz]) {
                                 const intMod = cMod2[voz].midi - cMod1[voz].midi, intRep = cRep2[voz].midi - cRep1[voz].midi;
-                                if (Math.sign(intMod) !== Math.sign(intRep) || !approxInterval(intMod, intRep)) { coincide = false; break outer1; }
+                                // Una voz que se queda quieta (intervalo 0) en el modelo o en la
+                                // repetición es compatible con un movimiento pequeño (±1 semitono)
+                                // en la posición correspondiente -una variación normal en una
+                                // secuencia TONAL (diatónica, no exacta), donde una nota puede
+                                // quedarse fija en un paso y moverse un semitono en el siguiente
+                                // según cómo caiga sobre la escala. Solo se rompe la secuencia si
+                                // ambas voces se mueven de verdad y lo hacen en direcciones
+                                // opuestas.
+                                const signosIncompatibles = (intMod !== 0 && intRep !== 0 && Math.sign(intMod) !== Math.sign(intRep));
+                                if (signosIncompatibles || !approxInterval(intMod, intRep)) { coincide = false; break outer1; }
                             }
                         }
                     }
@@ -6300,7 +6392,8 @@ function detectarSecuenciasLogica(results, structuralChords, infos) {
                                 for (const voz of ['soprano', 'alto', 'tenor', 'bass']) {
                                     if (cMod1[voz] && cMod2[voz] && cNext1[voz] && cNext2[voz]) {
                                         const intMod = cMod2[voz].midi - cMod1[voz].midi, intNext = cNext2[voz].midi - cNext1[voz].midi;
-                                        if (Math.sign(intMod) !== Math.sign(intNext) || !approxInterval(intMod, intNext)) { repValida = false; break outer2; }
+                                        const signosIncompatibles = (intMod !== 0 && intNext !== 0 && Math.sign(intMod) !== Math.sign(intNext));
+                                        if (signosIncompatibles || !approxInterval(intMod, intNext)) { repValida = false; break outer2; }
                                     }
                                 }
                             }
@@ -6315,10 +6408,12 @@ function detectarSecuenciasLogica(results, structuralChords, infos) {
                 if (mixta) tipoSecuencia = "Mixta";
                 if (L === 2 && numRepeticiones === 1) continue;
 
-                infos.push(`🎼 <strong>Secuencia ${tipoSecuencia}</strong> (Acordes ${i + 1}–${c}): Modelo de ${L} acordes con ${numRepeticiones} repetición/es.`);
-                visualState.sequences.push({ start: i + 1, end: i + L, type: 'modelo' });
-                for (let rep = 1; rep <= numRepeticiones; rep++) {
-                    visualState.sequences.push({ start: i + rep * L + 1, end: i + (rep + 1) * L, type: 'repeticion' });
+                if (!solapaConSerieDeSeptimas(i + 1, c)) {
+                    infos.push(`🎼 <strong>Secuencia ${tipoSecuencia}</strong> (Acordes ${i + 1}–${c}): Modelo de ${L} acordes con ${numRepeticiones} repetición/es.`);
+                    visualState.sequences.push({ start: i + 1, end: i + L, type: 'modelo' });
+                    for (let rep = 1; rep <= numRepeticiones; rep++) {
+                        visualState.sequences.push({ start: i + rep * L + 1, end: i + (rep + 1) * L, type: 'repeticion' });
+                    }
                 }
                 i = c;
                 secuenciaEncontrada = true;
@@ -7698,6 +7793,24 @@ tipo.includes("novena de dominante") || tipo.includes("M7m");
                 
                 if (targetEsperado === targetDelSiguiente) {
                     isDominantFunction = true;
+                } else {
+                    // Resolución sustitutiva: la dominante aplicada puede
+                    // resolver al VI grado (relativo menor) de la tonalidad
+                    // que toniciza, en vez de al I —el mismo criterio que ya
+                    // usa esDominanteFuncional para la etiqueta de grado
+                    // (p.ej. V/IV resolviendo a ii en vez de a IV, ya que ii
+                    // y IV comparten dos notas y el ii puede sustituir a la
+                    // subdominante). Sin este mismo criterio aquí, el
+                    // cifrado se quedaba desincronizado con la etiqueta:
+                    // "(V/IV)" en el grado, pero sin la sensible marcada en
+                    // el cifrado, como si no fuera ninguna dominante.
+                    const targetRelativeMinorPC = (targetEsperado + 9) % 12;
+                    const esLaPropiaTonicaVigente = (modeVal === 'minor' && targetRelativeMinorPC === localTonicPC);
+                    if (resNext.rootPC === targetRelativeMinorPC &&
+                        tipoSig.includes("menor") && !tipoSig.includes("disminu") &&
+                        !esLaPropiaTonicaVigente) {
+                        isDominantFunction = true;
+                    }
                 }
             }
         }
